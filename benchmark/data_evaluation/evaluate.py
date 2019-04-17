@@ -323,9 +323,7 @@ if __name__ == '__main__':
     #     with open(f2, errors='replace') as f:
     #         pred_data = json.load(f)
     #     for v, p in zip(val_data, pred_data):
-    #         for entity in v['entities']:
-    #             if entity['entity'] == 'intent' and entity['value'] == 'SearchCreativeWork':
-    #                 print(v['text'])
-    #                 print(v['seq_labels'])
-    #                 print(p['labels'])
-    #                 print()
+    #         print(v['text'])
+    #         print(v['seq_labels'])
+    #         print(p['labels'])
+    #         print()
