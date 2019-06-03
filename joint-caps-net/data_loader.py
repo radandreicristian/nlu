@@ -3,13 +3,13 @@
 
 import numpy as np
 import tool
-from random import Random
+import random
 from datetime import datetime
 from gensim.models.keyedvectors import KeyedVectors
 
 word2vec_path = 'data/word-vec/wiki.ro.vec'
-training_data_path = 'data/scenario0/train.txt'
-test_data_path = 'data/scenario0/train.txt'
+training_data_path = 'data/scenario0/sh_train.txt'
+test_data_path = 'data/scenario0/sh_test.txt'
 
 
 def load_w2v(file_name):
@@ -21,6 +21,24 @@ def load_w2v(file_name):
             file_name, binary=False)
     return w2v
 
+
+def data_shufler(train_file_path, test_file_path):
+    train_samples = [line.rstrip('\n') for line in open(train_file_path)]
+    test_samples = [line.rstrip('\n') for line in open(test_file_path)]
+    all_samples = train_samples + test_samples
+    random.shuffle(all_samples)
+
+    # split the set into 30 and 70 percent for test and train
+    train_set = all_samples[0: int(0.7 * len(all_samples))]
+    test_set = all_samples[int(0.7 * len(all_samples)):]
+
+    with open('data/scenario0/sh_train.txt', 'w') as f:
+        for item in train_set:
+            f.write("%s\n" % item)
+
+    with open('data/scenario0/sh_test.txt', 'w') as f:
+        for item in test_set:
+            f.write("%s\n" % item)
 
 def load_vec(file_path, w2v, in_max_len):
     """ load input data
@@ -173,4 +191,3 @@ def read_datasets():
     data['encoded_slots_tr'] = one_hot_y_slots_tr
     print("------------------read datasets end---------------------")
     return data
-
