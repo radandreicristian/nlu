@@ -1,7 +1,7 @@
 import configparser
 import sys
 
-import tools
+from util import tools
 
 
 class SettingConfig:
