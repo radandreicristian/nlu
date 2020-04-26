@@ -4,11 +4,11 @@ import numpy as np
 from numpy import dot
 from numpy.linalg import norm
 
-import tools
+from util import tools
 
-ORIGINAL_VECS = 'lang/vectors/ro_ft_300_allpos_datasets_ant_syn_vsp.vec'
+ORIGINAL_VECS = 'lang/vectors/ro_ft_300.vec'
 
-CF_VECS = 'lang/vectors/ro_ft_300_allpos_datasets_ant_syn_vsp_aug.vec'
+CF_VECS = 'lang/vectors/ro_ft_300_allpos_datasets_ant_syn_vsp_aug2.vec'
 VOCABULARY = 'lang/vocab_small_diac.txt'
 
 
@@ -44,6 +44,17 @@ def compare_vecs(original_vecs_path, cf_vecs_path, vocab_path):
     print("Identical vector values" if identical else "Not identical vector values")
 
 
+def report_vectors(og_path, cf_path):
+    _, og_vecs = tools.load_vectors_novocab(og_path)
+    _, cf_vecs = tools.load_vectors_novocab(cf_path)
+    while True:
+        w1, w2 = str(input()).split(" ")
+        print(f"Cos sim for {w1} between original and counterfit embedding {cosine_sim(og_vecs[w1], cf_vecs[w1])}"
+              f"Cos sim for {w2} between original and counterfit embedding {cosine_sim(og_vecs[w2], cf_vecs[w2])}"
+              f"Cos sim between {w1} and {w2} original: {cosine_sim(og_vecs[w1], og_vecs[w2])}"
+              f"Cos sim between {w1} and {w2} counterfit: {cosine_sim(cf_vecs[w1], cf_vecs[w2])}")
+
+
 def compare_antonyms(path1, path2):
     set1 = set()
     set2 = set()
@@ -70,5 +81,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-
+    report_vectors(ORIGINAL_VECS, CF_VECS)

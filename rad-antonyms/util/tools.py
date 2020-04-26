@@ -42,6 +42,33 @@ def load_vectors(source_path: str, vocab: set) -> (Optional[str], dict):
     return dimensions, normalise(words)
 
 
+def load_vectors_novocab(source_path: str) -> (Optional[str], dict):
+    print(f"Started loading vectors from {source_path} @ {datetime.now()}")
+    words = dict()
+    try:
+        with open(file=source_path, mode="r", encoding="utf-8") as source_file:
+            # Get the first line. Check if there's only 2 space-separated strings (hints a dimension)
+            dimensions = str(next(source_file))
+            if len(dimensions.split(" ")) == 2:
+                # We have a dimensions line. Keep it in the variable, continue with the next lines
+                pass
+            else:
+                # We do not have a dimensions line
+                line = dimensions.split(' ', 1)
+                key = line[0]
+                words[key] = np.fromstring(line[1], dtype="float32", sep=' ')
+                dimensions = None
+            for line in source_file:
+                line = line.split(' ', 1)
+                key = line[0]
+                words[key] = np.fromstring(line[1], dtype="float32", sep=' ')
+    except OSError:
+        print("Unable to read word vectors, aborting.")
+        return {}
+    print(f"Finished loading a total of {len(words)} vectors @ {datetime.now()}")
+    return dimensions, normalise(words)
+
+
 def store_vectors(dimens: str, destination_path: str, vectors: dict) -> None:
     print(f"Storing a total of {len(vectors)} counter-fitted vectors in {destination_path} @ {datetime.now()}")
     with open(file=destination_path, mode="w", encoding="utf-8") as destination_file:
@@ -144,3 +171,23 @@ def save_dict_to_file(dictionary: dict, dst_path: str) -> None:
         for k, v in dictionary.items():
             dst.write(f"{k} {v}\n")
         dst.close()
+
+
+def load_constraints(constraints_path: str) -> set:
+    # Create a set with all the pairs contained in the file specified by the constraint path
+    constraints = set()
+    with open(file=constraints_path, mode="r", encoding="utf-8") as constraints_file:
+        for line in constraints_file:
+            w0, w1 = line.replace("\n", "").split(" ")
+            constraints.add((w0, w1))
+            constraints.add((w1, w0))
+    constraints_file.close()
+    return constraints
+
+
+def load_multiple_constraints(constraint_paths: list) -> set:
+    constraints = set()
+    for constraint_path in constraint_paths:
+        current_constraints = load_constraints(constraint_path)
+        constraints = constraints | current_constraints
+    return constraints

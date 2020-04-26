@@ -18,7 +18,7 @@ from gspread import Worksheet
 from oauth2client.service_account import ServiceAccountCredentials
 from sklearn.utils import resample
 
-from tools import copy_path
+from util.tools import copy_path
 
 SPREADSHEET_START_VERTICAL_OFFSET = 3
 
@@ -376,8 +376,8 @@ def get_worksheet(name: str) -> Optional[Worksheet]:
     return client.open(name).sheet1
 
 
-def create_analysis_archive(config: SettingConfig) -> None :
-    with ZipFile(f'{time.time()}{config.identifier}.zip', 'w') as zipObj:
+def create_analysis_archive(config: SettingConfig) -> None:
+    with ZipFile(f'/results/analysis_archives/{time.time()}{config.identifier}.zip', 'w') as zipObj:
         # Iterate over all the files in directory
         for folderName, subfolders, filenames in os.walk(config.merged_reports_root):
             for filename in filenames:
