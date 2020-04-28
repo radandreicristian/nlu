@@ -191,3 +191,48 @@ def load_multiple_constraints(constraint_paths: list) -> set:
         current_constraints = load_constraints(constraint_path)
         constraints = constraints | current_constraints
     return constraints
+
+
+def compute_set_difference(generated_constraints_path: str, augmented_constraints_path: str) -> set:
+    og_pairs = set()
+    aug_pairs = set()
+    with io.open(file=generated_constraints_path, mode="r", encoding="utf-8") as og_pairs_file:
+        for line in og_pairs_file.readlines():
+            w0, w1 = line.split(" ")
+            og_pairs.add(tuple(sorted((w0, w1))))
+
+    with io.open(file=augmented_constraints_path, mode="r", encoding="utf-8") as aug_pairs_file:
+        for line in aug_pairs_file.readlines():
+            w0, w1 = line.split(" ")
+            aug_pairs.add(tuple(sorted((w0, w1))))
+
+    print(len(aug_pairs))
+    print(len(og_pairs))
+    return aug_pairs.difference(og_pairs)
+
+
+
+def extract_sentences(datasets_root_path: str) -> set:
+    sentences = set()
+
+    for root, _, files in os.walk(datasets_root_path, topdown=False):
+        for file in files:
+            path = os.path.join(root, file)
+            with io.open(path, "r", encoding="utf-8") as input_file:
+                # Load the JSON content
+                content = json.load(input_file)
+
+                # Obtain the wrapped object
+                data = content["rasa_nlu_data"]
+
+                # Obtain the list of sentences
+                common_examples = data["common_examples"]
+
+                for example in common_examples:
+                    sentences.add(example["text"])
+    return sentences
+
+
+if __name__ == "__main__":
+    diff = compute_set_difference("../lang/constraints/verb/antonyms.txt", "../lang/constraints/verb/antonyms_aug.txt")
+    print(diff)

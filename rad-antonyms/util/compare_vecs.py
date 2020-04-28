@@ -11,6 +11,14 @@ ORIGINAL_VECS = 'lang/vectors/ro_ft_300.vec'
 CF_VECS = 'lang/vectors/ro_ft_300_allpos_datasets_ant_syn_vsp_aug2.vec'
 VOCABULARY = 'lang/vocab_small_diac.txt'
 
+dataset_antonyms = [
+    ("mărești", "micșorează"),
+    ("mărești", "diminuează"),
+    ("porni", "opri"),
+    ("porni", "stinge"),
+    ("inchide", "deschide")
+]
+
 
 def cosine_sim(a, b):
     cos_sim = dot(a, b) / (norm(a) * norm(b))

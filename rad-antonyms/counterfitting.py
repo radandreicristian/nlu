@@ -1,6 +1,5 @@
 import configparser
 import gc
-import multiprocessing as mp
 import os.path
 import random
 import sys
@@ -9,7 +8,7 @@ from datetime import datetime
 
 import numpy as np
 
-from util import tools
+import util.tools
 
 
 class SettingConfig:
@@ -62,13 +61,28 @@ class SettingConfig:
         # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
         mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
+        self.synonyms = load_multiple_constraints(synonym_paths)
+        self.antonyms = load_multiple_constraints(antonym_paths)
+
         vocab = set()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
             for line in vocab_file:
                 vocab.add(line.strip())
 
+        # Add augmented words from synonyms list to the vocab
+        for pair in self.synonyms:
+            if pair[0] in vocab or pair[1] in vocab:
+                vocab.add(pair[0])
+                vocab.add(pair[1])
+
+        # Add augmented words from antonym lists to the vocab
+        for pair in self.antonyms:
+            if pair[0] in vocab or pair[1] in vocab:
+                vocab.add(pair[0])
+                vocab.add(pair[1])
+
         # Load the word vectors
-        dimensions, self.vectors = tools.load_vectors(input_vectors_path, vocab)
+        dimensions, self.vectors = util.tools.load_vectors(input_vectors_path, vocab)
 
         # Return if vectors were not successfully loaded
         if not self.vectors:
@@ -81,29 +95,56 @@ class SettingConfig:
         self.vocabulary = set(self.vectors.keys())
 
         self.dimensions = f"{len(self.vocabulary)} {dimensions.split(' ')[1]}"
-        print(f"dimens: {self.dimensions}")
 
         # Load synonym and antonym pairs from the paths specified
-        self.synonyms = tools.load_multiple_constraints(synonym_paths)
-        self.antonyms = tools.load_multiple_constraints(antonym_paths)
+
         self.mode = mode
+        self.vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
 
         # Read the hyperparameters of our run
         self.hyper_k1 = self.config.getfloat("hyperparameters", "hyper_k1")
         self.hyper_k2 = self.config.getfloat("hyperparameters", "hyper_k2")
         self.hyper_k3 = self.config.getfloat("hyperparameters", "hyper_k3")
-        self.max_iter = self.config.getint("hyperparameters", "sgd_iters")
+        self.sgd_iters = self.config.getint("hyperparameters", "sgd_iters")
 
         self.delta = self.config.getfloat("hyperparameters", "delta")
         self.gamma = self.config.getfloat("hyperparameters", "gamma")
         self.rho = self.config.getfloat("hyperparameters", "rho")
         print(
-            f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {parts_of_speech}, Mode: {self.mode}")
+            f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {parts_of_speech},"
+            f" Mode: {self.mode}")
 
 
-def compute_vsp_pairs(vectors: dict, vocab: set, rho=0.2) -> dict:
+def load_constraints(constraints_path: str) -> set:
+    # Create a set with all the pairs contained in the file specified by the constraint path
+    constraints = set()
+    with open(file=constraints_path, mode="r", encoding="utf-8") as constraints_file:
+        for line in constraints_file:
+            w0, w1 = line.replace("\n", "").split(" ")
+            # Add both pairs composed by the current line
+            constraints.add((w0, w1))
+            constraints.add((w1, w0))
+    constraints_file.close()
+    return constraints
+
+
+def load_multiple_constraints(constraint_paths: list) -> set:
+    constraints = set()
+    for constraint_path in constraint_paths:
+        # Load the constraints
+        current_constraints = load_constraints(constraint_path)
+        # Append them to the existing set
+        constraints = constraints | current_constraints
+    return constraints
+
+
+def compute_vsp_pairs(vectors: dict, vocab: set, config: SettingConfig) -> dict:
     print(f"Computing VSP pairs @ {datetime.now()}")
     vsp_pairs = dict()
+    if not config.rho:
+        rho = 0.2
+    else:
+        rho = config.rho
     th = 1 - rho
     vocab = list(vocab)
     words_count = len(vocab)
@@ -123,9 +164,8 @@ def compute_vsp_pairs(vectors: dict, vocab: set, rho=0.2) -> dict:
 
     range_count = len(ranges)
     for left_range in range(range_count):
-        print(f"Left range {left_range}/{range_count} @ {datetime.now()}")
         for right_range in range(left_range, range_count):
-
+            print(f"LR: {left_range}/{range_count}. RR: {right_range}/{range_count}")
             left_translation = ranges[left_range][0]
             right_translation = ranges[right_range][0]
 
@@ -156,10 +196,12 @@ def compute_vsp_pairs(vectors: dict, vocab: set, rho=0.2) -> dict:
                     score = 1 - dot_product[left_indices[index], right_indices[index]]
                     vsp_pairs[(left_word, right_word)] = score
                     vsp_pairs[(right_word, left_word)] = score
-            #print("RR: " + str(right_range))
-        print("LR: " + str(left_range) + " " + str(datetime.now()))
+        # Perform a garbage collection operation at the end of a left range iteration.
+        # If performed inside the inner for -> Significant impact on time, if outside impact on memory
+        # TODO: Figure which is the more appropriate one
         gc.collect()
     print(f"Computed VSP pairs @ {datetime.now()}")
+    util.tools.save_dict_to_file(vsp_pairs, config.vsp_path)
     return vsp_pairs
 
 
@@ -173,11 +215,11 @@ def _sgd_step_ant(antonym_pairs: set, enriched_vectors: dict, config: SettingCon
             break
 
         # Compute distance in new vector space
-        dist = tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        dist = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist < config.delta:
 
             # Compute the partial gradient
-            gradient = tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
 
             # Weight it by K1
             gradient *= config.hyper_k1
@@ -194,12 +236,13 @@ def _sgd_step_syn(synonym_pairs: set, enriched_vectors: dict, config: SettingCon
                   update_count: dict) -> (dict, dict):
     for (w0, w1) in synonym_pairs:
 
+        # Extra check for reduced vocabulary:
         if w0 not in config.vocabulary or w1 not in config.vocabulary:
             break
 
-        dist = tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        dist = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist > config.gamma:
-            gradient = tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k2
             if w1 in gradient_updates:
                 gradient_updates[w1] += gradient
@@ -214,14 +257,15 @@ def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig
                   update_count: dict) -> (dict, dict):
     for (w0, w1) in vsp_pairs:
 
+        # Extra check for reduced vocabulary:
         if w0 not in config.vocabulary or w1 not in config.vocabulary:
             break
 
         original_distance = vsp_pairs[(w0, w1)]
-        new_distance = tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        new_distance = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
 
         if original_distance <= new_distance:
-            gradient = tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k3
 
             if w0 in gradient_updates:
@@ -257,7 +301,7 @@ def sgd_step(vectors: dict, synonym_pairs: set, antonym_pairs: set, vsp_pairs: d
         update_term = gradient_updates[word] / (update_count[word])
         enriched_vectors[word] += update_term
 
-    return tools.normalise(enriched_vectors)
+    return util.tools.normalise(enriched_vectors)
 
 
 def counterfit(config: SettingConfig) -> dict:
@@ -267,14 +311,13 @@ def counterfit(config: SettingConfig) -> dict:
     synonyms = config.synonyms
 
     current_iteration = 0
-
     vsp_pairs = {}
 
-    pool = mp.Pool(mp.cpu_count())
     # Only compute the VSP Pairs step if listed in the config mode and the weight of the vsp pairs is different than 0
     if 'vsp' in config.mode and config.hyper_k3 > 0.0:  # if we need to compute the VSP terms.
-        vsp_pairs = pool.apply(compute_vsp_pairs, args=(word_vectors, vocabulary))#compute_vsp_pairs(word_vectors, vocabulary, rho=config.rho)
-    pool.close()
+        # TODO: Load existing VSP pairs if exist to avoid computationally heavy operation in the future
+        vsp_pairs = compute_vsp_pairs(word_vectors, vocabulary, config)
+
     # Post-processing: remove synonym pairs which are deemed to be both synonyms and antonyms:
     for antonym_pair in antonyms:
         if antonym_pair in synonyms:
@@ -282,9 +325,11 @@ def counterfit(config: SettingConfig) -> dict:
         if antonym_pair in vsp_pairs:
             del vsp_pairs[antonym_pair]
 
-    print("Running the optimisation procedure for ", config.max_iter, " SGD steps...")
+    print("Running the optimisation procedure for ", config.sgd_iters, " SGD steps...")
 
-    while current_iteration < config.max_iter:
+    sgd_steps = config.sgd_iters
+
+    while current_iteration < sgd_steps:
         current_iteration += 1
         print(f"\tRunning SGD Step {current_iteration}")
         word_vectors = sgd_step(word_vectors, synonyms, antonyms, vsp_pairs, config)
@@ -301,7 +346,7 @@ def run_experiment(config_path):
     enriched_vectors = counterfit(config)
 
     # Store all the counterfitting vectors
-    tools.store_vectors(dimens=config.dimensions, destination_path=config.output_vectors_path, vectors=enriched_vectors)
+    util.tools.store_vectors(dimens=config.dimensions, destination_path=config.output_vectors_path, vectors=enriched_vectors)
 
 
 def main():
