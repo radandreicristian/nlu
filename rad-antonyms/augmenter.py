@@ -50,12 +50,14 @@ class Augmenter:
         self.conjugator = mlconjug.Conjugator(language='ro')
 
         # https://universaldependencies.org/tagset-conversion/ro-multext-uposf.html
+        # TODO: not used at the moment, might use it in the future; Good to have
         self.valid_verb_forms = ['Vmii1', 'Vmii1p', 'Vmii1s', 'Vmii2s', 'Vmii2p', 'Vmii3p',
                                  'Vmii3s', 'Vmil1', 'Vmil3p', 'Vmil3s', 'Vmip1p', 'Vmip1s', 'Vmip2p', 'Vmip2s', 'Vmip3',
                                  'Vmip3p', 'Vmip3s', 'Vmis1p', 'Vmis1s', 'Vmis3p', 'Vmis3s', 'Vmm-2p', 'Vmm-2s', 'Vmnp',
                                  'Vmsp1p', 'Vmsp1s', 'Vmsp2p', 'Vmsp2s', 'Vmsp3', 'Vmsp3s']
 
     def process_sentence(self, sentence: str) -> tuple:
+
         """
         :param sentence: The training sentence we want to augment our pairs based on
         """
@@ -70,9 +72,10 @@ class Augmenter:
         for token in doc:
 
             # If the PoS Treebank Tag is in the valid verb forms, do the processing
-            if token.tag_ in self.valid_verb_forms:
-                conjugated_antonym_pairs = self.update_pairs(token, token.lemma_, self.antonym_pairs)
-                conjugated_synonym_pairs = self.update_pairs(token, token.lemma_, self.synonym_pairs)
+            if token.tag_[0] == 'V':
+                print(f"valid verb: {token.text}")
+                conjugated_antonym_pairs = self.update_pairs(token.text, token.lemma_, self.antonym_pairs)
+                conjugated_synonym_pairs = self.update_pairs(token.text, token.lemma_, self.synonym_pairs)
 
                 synonym_output_pairs = synonym_output_pairs | conjugated_synonym_pairs
                 antonym_output_pairs = antonym_output_pairs | conjugated_antonym_pairs
@@ -110,7 +113,7 @@ class Augmenter:
                 # Unpack the time, mood, person and value from the tuple
                 time, mood, person, value = conjugation
 
-                if value == str(target_word):
+                if value == target_word:
                     # Found a possible candidate, append the time/mood/person to the list
                     candidate_conjugations.append((time, mood, person))
 
@@ -130,8 +133,11 @@ class Augmenter:
 
                     # Add the pair composed of the target word and the conjugated form of the other to the final set
                     conjugated_pairs.add((target_word, conjugated_other))
-                except ValueError:
-                    print(f"Unable to add pair {target_word}, {other}")
+                    print(f"\t successfully added pair: ({target_word}, {conjugated_other})")
+                except ValueError as e:
+                    print(f"Unable to add pair due to value: {other} {e.args}")
+                except KeyError as e:
+                    print(f"Unable to add pair due to key {other} {e.args}")
 
         return conjugated_pairs
 

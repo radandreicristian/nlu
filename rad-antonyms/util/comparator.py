@@ -1,0 +1,107 @@
+import configparser
+import io
+import os
+import pathlib
+from typing import Optional, TextIO
+
+from util import tools
+
+
+class Comparator:
+
+    def __init__(self, config_path: str, vectors: dict, **kwargs):
+
+        self.config = configparser.RawConfigParser()
+        try:
+            self.config.read(config_path)
+        except OSError:
+            print("Unable to read config, aborting.")
+            return
+
+        self.original_vectors = vectors
+
+        # Save the keywordargs
+        self.args = kwargs
+
+        # Set counterfit vectors path
+        self.counterfit_vectors_path = self.args['counterfit_vectors_path']
+
+        # Set original vectors path
+        if not self.original_vectors:
+            self.original_vectors_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
+                                                      self.config.get("paths",
+                                                                      "VEC_PATH"))
+
+        # Compute the path to antonyms and load them in a set
+        dataset_antonyms_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
+                                             self.config.get("paths", "DATASET_ANTONYMS_PATH"))
+
+        dataset_synonyms_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
+                                             self.config.get("paths", "DATASET_SYNONYMS_PATH"))
+
+        self.dataset_antonyms = tools.load_pairs(dataset_antonyms_path)
+        self.dataset_synonyms = tools.load_pairs(dataset_synonyms_path)
+        # Set epsilon, the minimum distance difference between similarities of an origina/counterfit pair
+        # to be considered valid
+        self.epsilon = self.config.get("hyperparameters", "epsilon")
+        self.output_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "lang",
+                                        "counterfitting_reports",
+                                        str("".join(self.counterfit_vectors_path).split("/")[-1].rsplit(".", 1)[
+                                                0]) + ".txt")
+
+    def compare(self):
+        # Load original and counterfit vectors
+        if not self.original_vectors:
+            _, og_vecs = tools.load_vectors_novocab(self.original_vectors_path)
+        else:
+            og_vecs = self.original_vectors
+        _, cf_vecs = tools.load_vectors_novocab(self.counterfit_vectors_path)
+        with io.open(file=self.output_path, mode="w", encoding="utf-8") as output_file:
+            # Write the kwargs as the counterfit run oiptions
+            output_file.write("Counterfitting Run Options\n")
+            for k, v in self.args.items():
+                key = k.replace("'", '')
+                value = str(v).replace("'", '').replace("]", "").replace("[", "")
+                output_file.write(f"{key} : {value}\n")
+            output_file.write("\n I. Antonyms Results \n")
+
+            # Write the report regarding the antonym pairs in the dataset
+            self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_antonyms)
+
+            output_file.write("\n II. Syonyms Results \n")
+            # In the same file,w rite the report regarding the synonym pairs in the dataset
+            self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_synonyms)
+            output_file.close()
+
+    def compare_counterfit_pairs(self, original_vectors: dict, counterfit_vectors: dict, output_file: TextIO,
+                                 pairs: set) -> None:
+        valid_pairs = []
+        for (w1, w2) in pairs:
+            valid = self.report_pair(w1, w2, original_vectors, counterfit_vectors, output_file)
+            if valid:
+                valid_pairs.append(valid)
+        output_file.write(f"\n Counterfit pairs with significant increase ( distance diff. > {self.epsilon})"
+                          f"\n Count: {len(valid_pairs)} / {len(self.dataset_antonyms)} "
+                          f" ({len(valid_pairs) / len(self.dataset_antonyms) * 100}%)")
+        for pair in valid_pairs:
+            output_file.write(f"\t{pair[0], pair[1]}".replace("'", "").replace(']', '').replace('[', ''))
+
+    def report_pair(self, w1: str, w2: str, og_vecs: dict, cf_vecs: dict, output_file: TextIO) -> Optional[tuple]:
+        # Compute and write the pair stats to file
+        stats = self.compute_pair_stats(w1, w2, og_vecs, cf_vecs)
+        output_file.write(stats)
+
+        # Return the pair if the abs of the difference of cos similarities between original and counterfit
+        # vectors is greater than epsilon
+        return (w1, w2) if abs(
+            float(tools.cos_sim(og_vecs[w1], og_vecs[w2]) - tools.cos_sim(cf_vecs[w1], cf_vecs[w2]))) > float(
+            self.epsilon) else None
+
+    @staticmethod
+    def compute_pair_stats(w1: str, w2: str, og_vecs: dict, cf_vecs: dict) -> str:
+        # Simply return a formatted string containing the full report of a pair of words
+        return (f"Similarity report for {w1}, {w2}:\n"
+                f"\tCos between original/counterfit {w1}: {tools.cos_sim(og_vecs[w1], cf_vecs[w1])}\n"
+                f"\tCos between original/counterfit {w2}: {tools.cos_sim(og_vecs[w2], cf_vecs[w2])}\n"
+                f"\tOriginal cos for {w1}/{w2}: {tools.cos_sim(og_vecs[w1], og_vecs[w2])}\n"
+                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(cf_vecs[w1], cf_vecs[w2])}\n")

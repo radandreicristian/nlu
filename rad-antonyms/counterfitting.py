@@ -9,6 +9,7 @@ from datetime import datetime
 import numpy as np
 
 import util.tools
+from util.comparator import Comparator
 
 
 class SettingConfig:
@@ -27,15 +28,16 @@ class SettingConfig:
             return
 
         # Read the word vectors path from the config
-        input_vectors_path = self.config.get("paths", "VEC_PATH")
+        self.input_vectors_path = self.config.get("paths", "VEC_PATH")
 
         # Read the vocabulary mode (all words or just dataset words) from the config
-        vocab_mode = self.config.get("settings", "VOCABULARY")
-        if vocab_mode == 'all':
+        self.vocab_mode = self.config.get("settings", "VOCABULARY")
+        if self.vocab_mode == 'all':
+            self.diacritics = 'True'
             vocab_path = self.config.get("paths", "VOCAB_PATH")
-        elif vocab_mode == 'small':
-            diacritics = self.config.get("settings", "DIACRITICS")
-            if diacritics == 'True':
+        elif self.vocab_mode == 'small':
+            self.diacritics = self.config.get("settings", "DIACRITICS")
+            if self.diacritics == 'True':
                 vocab_path = self.config.get("paths", "VOCAB_PATH_DATASET_DIAC")
             else:
                 vocab_path = self.config.get("paths", "VOCAB_PATH_DATASET_NODIAC")
@@ -50,19 +52,20 @@ class SettingConfig:
         constraints_root_path = self.config.get("paths", "CONSTRAINTS_ROOT_PATH")
 
         # Read the PoS variable
-        parts_of_speech = self.config.get("settings", "POS").replace("[", "").replace("]", "").replace(" ", "").split(
+        self.parts_of_speech = self.config.get("settings", "POS").replace("[", "").replace("]", "").replace(" ",
+                                                                                                            "").split(
             ",")
 
         # Append antonyms and synonyms of each selected PoS from their respective folder
-        for part_of_speech in parts_of_speech:
+        for part_of_speech in self.parts_of_speech:
             antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
             synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
 
         # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
         mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
-        self.synonyms = load_multiple_constraints(synonym_paths)
-        self.antonyms = load_multiple_constraints(antonym_paths)
+        self.synonyms = util.tools.load_multiple_constraints(synonym_paths)
+        self.antonyms = util.tools.load_multiple_constraints(antonym_paths)
 
         vocab = set()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
@@ -82,13 +85,14 @@ class SettingConfig:
                 vocab.add(pair[1])
 
         # Load the word vectors
-        dimensions, self.vectors = util.tools.load_vectors(input_vectors_path, vocab)
+        dimensions, self.vectors = util.tools.load_vectors(self.input_vectors_path, vocab)
 
         # Return if vectors were not successfully loaded
         if not self.vectors:
             return
 
-        self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH")
+        self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
+                                       0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec"
 
         # The vocabulary contains the keys of vectors successfully loaded by the initial vocabulary: Words in the
         # initial vocabulary with no corresponding vector are skipped
@@ -97,7 +101,6 @@ class SettingConfig:
         self.dimensions = f"{len(self.vocabulary)} {dimensions.split(' ')[1]}"
 
         # Load synonym and antonym pairs from the paths specified
-
         self.mode = mode
         self.vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
 
@@ -111,31 +114,18 @@ class SettingConfig:
         self.gamma = self.config.getfloat("hyperparameters", "gamma")
         self.rho = self.config.getfloat("hyperparameters", "rho")
         print(
-            f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {parts_of_speech},"
+            f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {self.parts_of_speech},"
             f" Mode: {self.mode}")
 
+    def init_comparator(self, config_path: str, vectors: dict) -> None:
+        self.comparator = Comparator(config_path, vectors=vectors, mode=self.mode, pos=self.parts_of_speech,
+                                     hyperparameters=self.hyperparams_tostring(), diacritics=self.diacritics,
+                                     vocabulary=self.vocab_mode, original_vectors_path=self.input_vectors_path,
+                                     counterfit_vectors_path=self.output_vectors_path)
 
-def load_constraints(constraints_path: str) -> set:
-    # Create a set with all the pairs contained in the file specified by the constraint path
-    constraints = set()
-    with open(file=constraints_path, mode="r", encoding="utf-8") as constraints_file:
-        for line in constraints_file:
-            w0, w1 = line.replace("\n", "").split(" ")
-            # Add both pairs composed by the current line
-            constraints.add((w0, w1))
-            constraints.add((w1, w0))
-    constraints_file.close()
-    return constraints
-
-
-def load_multiple_constraints(constraint_paths: list) -> set:
-    constraints = set()
-    for constraint_path in constraint_paths:
-        # Load the constraints
-        current_constraints = load_constraints(constraint_path)
-        # Append them to the existing set
-        constraints = constraints | current_constraints
-    return constraints
+    def hyperparams_tostring(self) -> str:
+        return (f"k1={self.hyper_k1}, k2={self.hyper_k2}, k3={self.hyper_k3}"
+                f" delta={self.delta}, gamma={self.gamma}, rho={self.rho}, sgd_iters={self.sgd_iters}")
 
 
 def compute_vsp_pairs(vectors: dict, vocab: set, config: SettingConfig) -> dict:
@@ -346,7 +336,12 @@ def run_experiment(config_path):
     enriched_vectors = counterfit(config)
 
     # Store all the counterfitting vectors
-    util.tools.store_vectors(dimens=config.dimensions, destination_path=config.output_vectors_path, vectors=enriched_vectors)
+    util.tools.store_vectors(dimens=config.dimensions, dst_path=config.output_vectors_path, vectors=enriched_vectors)
+
+    config.init_comparator(config_path, enriched_vectors)
+
+    # Perform comparative analysis with original vectors
+    config.comparator.compare()
 
 
 def main():

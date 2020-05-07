@@ -12,12 +12,12 @@ import gensim.models as gs
 import numpy as np
 
 
-def load_vectors(source_path: str, vocab: set) -> (Optional[str], dict):
-    print(f"Started loading vectors from {source_path} @ {datetime.now()}")
+def load_vectors(src_path: str, vocab: set) -> (Optional[str], dict):
+    print(f"Started loading vectors from {src_path} @ {datetime.now()}")
     print(f"No. of words in vocabulary: {len(vocab)}")
     words = dict()
     try:
-        with open(file=source_path, mode="r", encoding="utf-8") as source_file:
+        with open(file=src_path, mode="r", encoding="utf-8") as source_file:
             # Get the first line. Check if there's only 2 space-separated strings (hints a dimension)
             dimensions = str(next(source_file))
             if len(dimensions.split(" ")) == 2:
@@ -42,11 +42,11 @@ def load_vectors(source_path: str, vocab: set) -> (Optional[str], dict):
     return dimensions, normalise(words)
 
 
-def load_vectors_novocab(source_path: str) -> (Optional[str], dict):
-    print(f"Started loading vectors from {source_path} @ {datetime.now()}")
+def load_vectors_novocab(src_path: str) -> (Optional[str], dict):
+    print(f"Started loading vectors from {src_path} @ {datetime.now()}")
     words = dict()
     try:
-        with open(file=source_path, mode="r", encoding="utf-8") as source_file:
+        with open(file=src_path, mode="r", encoding="utf-8") as source_file:
             # Get the first line. Check if there's only 2 space-separated strings (hints a dimension)
             dimensions = str(next(source_file))
             if len(dimensions.split(" ")) == 2:
@@ -69,9 +69,9 @@ def load_vectors_novocab(source_path: str) -> (Optional[str], dict):
     return dimensions, normalise(words)
 
 
-def store_vectors(dimens: str, destination_path: str, vectors: dict) -> None:
-    print(f"Storing a total of {len(vectors)} counter-fitted vectors in {destination_path} @ {datetime.now()}")
-    with open(file=destination_path, mode="w", encoding="utf-8") as destination_file:
+def store_vectors(dimens: str, dst_path: str, vectors: dict) -> None:
+    print(f"Storing a total of {len(vectors)} counter-fitted vectors in {dst_path} @ {datetime.now()}")
+    with open(file=dst_path, mode="w", encoding="utf-8") as destination_file:
         if dimens:
             destination_file.write(dimens)
         keys = vectors.keys()
@@ -90,6 +90,10 @@ def normalise(words: dict) -> dict:
 def distance(v1, v2, normalised=True):
     # Distance between two vectors, optimized as per counterfitting implementation
     return 1 - np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)) if not normalised else 1 - np.dot(v1, v2)
+
+
+def cos_sim(v1, v2):
+    return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
 
 
 def partial_gradient(u, v, normalised=True):
@@ -118,8 +122,8 @@ def convert_vec_to_binary(vec_path: str, bin_path: str) -> None:
     model.save_word2vec_format(fname=bin_path, binary=True)
 
 
-def parse_vocabulary_from_file(file_path: str) -> set:
-    with io.open(file=file_path, mode="r", encoding='utf-8') as file:
+def parse_vocabulary_from_file(path: str) -> set:
+    with io.open(file=path, mode="r", encoding='utf-8') as file:
         content = json.load(file)
 
         # Obtain the wrapped object
@@ -141,9 +145,9 @@ def parse_vocabulary_from_file(file_path: str) -> set:
     return vocab
 
 
-def compute_vocabulary(base_path: str) -> set:
+def compute_vocabulary(path: str) -> set:
     vocab = set()
-    scenario_folders = [os.path.join(base_path, f) for f in os.listdir(base_path) if isdir(os.path.join(base_path, f))]
+    scenario_folders = [os.path.join(path, f) for f in os.listdir(path) if isdir(os.path.join(path, f))]
     for scenario_folder in scenario_folders:
         # Compute the path for the scenario folder
         files = [os.path.join(scenario_folder, f) for f in os.listdir(scenario_folder) if
@@ -154,8 +158,8 @@ def compute_vocabulary(base_path: str) -> set:
     return vocab
 
 
-def save_vocabulary(vocabulary: set, destination_path: str) -> None:
-    with io.open(file=destination_path, mode="w", encoding='utf-8') as destination_file:
+def save_vocabulary(vocabulary: set, dst_path: str) -> None:
+    with io.open(file=dst_path, mode="w", encoding='utf-8') as destination_file:
         for word in vocabulary:
             destination_file.write(word + "\n")
 
@@ -178,16 +182,26 @@ def load_constraints(constraints_path: str) -> set:
     constraints = set()
     with open(file=constraints_path, mode="r", encoding="utf-8") as constraints_file:
         for line in constraints_file:
-            w0, w1 = line.replace("\n", "").split(" ")
+            w0, w1 = line.replace("\n", "").strip().split(" ")
             constraints.add((w0, w1))
             constraints.add((w1, w0))
     constraints_file.close()
     return constraints
 
 
-def load_multiple_constraints(constraint_paths: list) -> set:
+def load_pairs(path: str) -> set:
+    pairs = set()
+    with open(file=path, mode="r", encoding="utf-8") as pairs_file:
+        for line in pairs_file:
+            w0, w1 = line.replace("\n", "").strip().split(" ")
+            pairs.add((w0, w1))
+        pairs_file.close()
+    return pairs
+
+
+def load_multiple_constraints(path: list) -> set:
     constraints = set()
-    for constraint_path in constraint_paths:
+    for constraint_path in path:
         current_constraints = load_constraints(constraint_path)
         constraints = constraints | current_constraints
     return constraints
@@ -209,7 +223,6 @@ def compute_set_difference(generated_constraints_path: str, augmented_constraint
     print(len(aug_pairs))
     print(len(og_pairs))
     return aug_pairs.difference(og_pairs)
-
 
 
 def extract_sentences(datasets_root_path: str) -> set:
