@@ -72,8 +72,9 @@ class Augmenter:
         for token in doc:
 
             # If the PoS Treebank Tag is in the valid verb forms, do the processing
+            # TODO: Workaround to only consider certain verb forms - explore the romanian tags
             if token.tag_[0] == 'V':
-                print(f"valid verb: {token.text}")
+
                 conjugated_antonym_pairs = self.update_pairs(token.text, token.lemma_, self.antonym_pairs)
                 conjugated_synonym_pairs = self.update_pairs(token.text, token.lemma_, self.synonym_pairs)
 

@@ -9,7 +9,7 @@ from util import tools
 
 class Comparator:
 
-    def __init__(self, config_path: str, vectors: dict, **kwargs):
+    def __init__(self, config_path: str, original_vectors: dict, counterfit_vectors: dict, **kwargs):
 
         self.config = configparser.RawConfigParser()
         try:
@@ -18,19 +18,18 @@ class Comparator:
             print("Unable to read config, aborting.")
             return
 
-        self.original_vectors = vectors
+        self.counterfit_vectors = counterfit_vectors
+        self.original_vectors = original_vectors
 
         # Save the keywordargs
         self.args = kwargs
 
-        # Set counterfit vectors path
+        # Set counterfit and original vectors path
         self.counterfit_vectors_path = self.args['counterfit_vectors_path']
 
-        # Set original vectors path
-        if not self.original_vectors:
-            self.original_vectors_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
-                                                      self.config.get("paths",
-                                                                      "VEC_PATH"))
+        self.original_vectors_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
+                                                  self.config.get("paths",
+                                                                  "VEC_PATH"))
 
         # Compute the path to antonyms and load them in a set
         dataset_antonyms_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(),
@@ -41,6 +40,7 @@ class Comparator:
 
         self.dataset_antonyms = tools.load_pairs(dataset_antonyms_path)
         self.dataset_synonyms = tools.load_pairs(dataset_synonyms_path)
+
         # Set epsilon, the minimum distance difference between similarities of an origina/counterfit pair
         # to be considered valid
         self.epsilon = self.config.get("hyperparameters", "epsilon")
@@ -52,10 +52,18 @@ class Comparator:
     def compare(self):
         # Load original and counterfit vectors
         if not self.original_vectors:
+            print("Loaded original vectors from file")
             _, og_vecs = tools.load_vectors_novocab(self.original_vectors_path)
         else:
+            print("Loaded original vectors from parameter")
             og_vecs = self.original_vectors
-        _, cf_vecs = tools.load_vectors_novocab(self.counterfit_vectors_path)
+        if not self.counterfit_vectors:
+            print("Loaded counterfit vectors from file")
+            _, cf_vecs = tools.load_vectors_novocab(self.counterfit_vectors_path)
+        else:
+            print("Loaded counterfit vectors from parameter")
+            cf_vecs = self.counterfit_vectors
+
         with io.open(file=self.output_path, mode="w", encoding="utf-8") as output_file:
             # Write the kwargs as the counterfit run oiptions
             output_file.write("Counterfitting Run Options\n")
@@ -63,12 +71,12 @@ class Comparator:
                 key = k.replace("'", '')
                 value = str(v).replace("'", '').replace("]", "").replace("[", "")
                 output_file.write(f"{key} : {value}\n")
-            output_file.write("\n I. Antonyms Results \n")
+            output_file.write("\n\n I. Antonyms Results \n\n")
 
             # Write the report regarding the antonym pairs in the dataset
             self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_antonyms)
 
-            output_file.write("\n II. Syonyms Results \n")
+            output_file.write("\n\n II. Syonyms Results \n\n")
             # In the same file,w rite the report regarding the synonym pairs in the dataset
             self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_synonyms)
             output_file.close()

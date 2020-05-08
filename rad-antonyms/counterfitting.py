@@ -61,11 +61,11 @@ class SettingConfig:
             antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
             synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
 
-        # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
-        mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
-
         self.synonyms = util.tools.load_multiple_constraints(synonym_paths)
         self.antonyms = util.tools.load_multiple_constraints(antonym_paths)
+
+        # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
+        mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
         vocab = set()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
@@ -89,6 +89,7 @@ class SettingConfig:
 
         # Return if vectors were not successfully loaded
         if not self.vectors:
+            print("Unable to load initial vectors")
             return
 
         self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
@@ -115,10 +116,12 @@ class SettingConfig:
         self.rho = self.config.getfloat("hyperparameters", "rho")
         print(
             f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {self.parts_of_speech},"
-            f" Mode: {self.mode}")
+            f" Mode: {self.mode}, diacritics: {self.diacritics}."
+            f" Hyperpameters: {self.hyperparams_tostring()}")
 
-    def init_comparator(self, config_path: str, vectors: dict) -> None:
-        self.comparator = Comparator(config_path, vectors=vectors, mode=self.mode, pos=self.parts_of_speech,
+    def init_comparator(self, config_path: str, counterfit_vectors: dict) -> None:
+        self.comparator = Comparator(config_path, original_vectors=self.vectors, counterfit_vectors=counterfit_vectors,
+                                     mode=self.mode, pos=self.parts_of_speech,
                                      hyperparameters=self.hyperparams_tostring(), diacritics=self.diacritics,
                                      vocabulary=self.vocab_mode, original_vectors_path=self.input_vectors_path,
                                      counterfit_vectors_path=self.output_vectors_path)
