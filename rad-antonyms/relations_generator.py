@@ -151,8 +151,7 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
             for relation in outbound_relations:
 
                 # Get the synset corresponding to the target of the outbound relation
-                target_synset_id = relation[0]
-                target_synset = wn.synset(target_synset_id)
+                target_synset = wn.synset(relation[0])
 
                 # Get the literals in the synset above
                 target_literals = target_synset.literals

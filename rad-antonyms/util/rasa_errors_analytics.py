@@ -51,9 +51,9 @@ def analyze_antonyms(dump_path: str) -> None:
 
             # If regular error line
             if 'Predicted' in line:
-                split_line = line.split(" ")
-                first_intent = split_line[4].replace(".", "")
-                second_intet = split_line[6].replace(".", "")
+                split_line = line.strip("\t").strip().split(" ")
+                first_intent = split_line[1].replace(".", "")
+                second_intet = split_line[3].replace(".", "")
                 if first_intent in light_intents and second_intet in light_intents:
                     antonym_errors[current_scenario_index]['aprinde/stinge_lumina'] += 1
                 if first_intent in light_intensity_intents and second_intet in light_intensity_intents:
@@ -69,6 +69,14 @@ def analyze_antonyms(dump_path: str) -> None:
             scenario[k] = int(v / 5)
 
     print(antonym_errors)
+
+
+def analyze_any(dump_path: str) -> None:
+    # List of
+    errors = []
+    with io.open(file=dump_path, mode="r", encoding="utf-8") as input_file:
+
+        input_file.close()
 
 
 if __name__ == '__main__':

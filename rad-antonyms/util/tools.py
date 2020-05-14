@@ -225,11 +225,13 @@ def compute_set_difference(generated_constraints_path: str, augmented_constraint
     return aug_pairs.difference(og_pairs)
 
 
-def extract_sentences(datasets_root_path: str) -> set:
+def _extract_sentences(root_path: str, constraint: Optional[str]) -> set:
     sentences = set()
 
-    for root, _, files in os.walk(datasets_root_path, topdown=False):
+    for root, _, files in os.walk(root_path, topdown=False):
         for file in files:
+            if constraint and constraint not in file:
+                continue
             path = os.path.join(root, file)
             with io.open(path, "r", encoding="utf-8") as input_file:
                 # Load the JSON content
@@ -244,6 +246,18 @@ def extract_sentences(datasets_root_path: str) -> set:
                 for example in common_examples:
                     sentences.add(example["text"])
     return sentences
+
+
+def extract_all_sentences(root_path: str) -> set:
+    return _extract_sentences(root_path, None)
+
+
+def extract_train_sentences(root_path: str) -> set:
+    return _extract_sentences(root_path, "train")
+
+
+def extract_test_sentences(root_path: str) -> set:
+    return _extract_sentences(root_path, "test")
 
 
 if __name__ == "__main__":
