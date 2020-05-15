@@ -12,6 +12,10 @@ import gensim.models as gs
 import numpy as np
 
 
+def unique(l: list) -> list:
+    return list(dict.fromkeys(l))
+
+
 def load_vectors(src_path: str, vocab: set) -> (Optional[str], dict):
     print(f"Started loading vectors from {src_path} @ {datetime.now()}")
     print(f"No. of words in vocabulary: {len(vocab)}")
@@ -30,12 +34,16 @@ def load_vectors(src_path: str, vocab: set) -> (Optional[str], dict):
                 if key in vocab:
                     words[key] = np.fromstring(line[1], dtype="float32", sep=' ')
                 dimensions = None
+            index = 0
             for line in source_file:
+                if index % 10000 == 0:
+                    print(index)
+                index += 1
                 line = line.split(' ', 1)
                 key = line[0]
                 if key in vocab:
                     words[key] = np.fromstring(line[1], dtype="float32", sep=' ')
-    except OSError:
+    except:
         print("Unable to read word vectors, aborting.")
         return {}
     print(f"Finished loading a total of {len(words)} vectors @ {datetime.now()}")
@@ -122,7 +130,7 @@ def convert_vec_to_binary(vec_path: str, bin_path: str) -> None:
     model.save_word2vec_format(fname=bin_path, binary=True)
 
 
-def parse_vocabulary_from_file(path: str) -> set:
+def parse_vocabulary_from_file(path: str) -> list:
     with io.open(file=path, mode="r", encoding='utf-8') as file:
         content = json.load(file)
 
@@ -132,21 +140,21 @@ def parse_vocabulary_from_file(path: str) -> set:
         # Obtain the list of sentences
         common_examples = data["common_examples"]
 
-        vocab = set()
+        vocab = list
 
         # For each example, parse its text and return the list containing all the words in the sentence
         for example in common_examples:
             sentence = example['text']
             punctuation = string.punctuation.replace("-", "")
             new_sentence = re.sub('[' + punctuation + ']', '', sentence)
-            vocab = vocab | set(new_sentence.split())
+            vocab = vocab + unique(new_sentence.split())
 
         file.close()
-    return vocab
+    return unique(vocab)
 
 
-def compute_vocabulary(path: str) -> set:
-    vocab = set()
+def compute_vocabulary(path: str) -> list:
+    vocab = list()
     scenario_folders = [os.path.join(path, f) for f in os.listdir(path) if isdir(os.path.join(path, f))]
     for scenario_folder in scenario_folders:
         # Compute the path for the scenario folder
@@ -154,11 +162,11 @@ def compute_vocabulary(path: str) -> set:
                  isfile(os.path.join(scenario_folder, f))]
         for file in files:
             file_vocab = parse_vocabulary_from_file(file)
-            vocab = vocab | file_vocab
-    return vocab
+            vocab = vocab + file_vocab
+    return unique(vocab)
 
 
-def save_vocabulary(vocabulary: set, dst_path: str) -> None:
+def save_vocabulary(vocabulary: list, dst_path: str) -> None:
     with io.open(file=dst_path, mode="w", encoding='utf-8') as destination_file:
         for word in vocabulary:
             destination_file.write(word + "\n")
@@ -177,56 +185,58 @@ def save_dict_to_file(dictionary: dict, dst_path: str) -> None:
         dst.close()
 
 
-def load_constraints(constraints_path: str) -> set:
+def load_constraints(constraints_path: str) -> list:
     # Create a set with all the pairs contained in the file specified by the constraint path
-    constraints = set()
+    constraints = list()
     with open(file=constraints_path, mode="r", encoding="utf-8") as constraints_file:
         for line in constraints_file:
             w0, w1 = line.replace("\n", "").strip().split(" ")
-            constraints.add((w0, w1))
-            constraints.add((w1, w0))
+            constraints.append((w0, w1))
+            constraints.append((w1, w0))
     constraints_file.close()
-    return constraints
+    return unique(constraints)
 
 
-def load_pairs(path: str) -> set:
-    pairs = set()
+def load_pairs(path: str) -> list:
+    pairs = list()
     with open(file=path, mode="r", encoding="utf-8") as pairs_file:
         for line in pairs_file:
             w0, w1 = line.replace("\n", "").strip().split(" ")
-            pairs.add((w0, w1))
+            pairs.append((w0, w1))
         pairs_file.close()
-    return pairs
+    return unique(pairs)
 
 
-def load_multiple_constraints(path: list) -> set:
-    constraints = set()
+def load_multiple_constraints(path: list) -> list:
+    constraints = list()
     for constraint_path in path:
         current_constraints = load_constraints(constraint_path)
-        constraints = constraints | current_constraints
-    return constraints
+        constraints = constraints + current_constraints
+    return unique(constraints)
 
 
-def compute_set_difference(generated_constraints_path: str, augmented_constraints_path: str) -> set:
-    og_pairs = set()
-    aug_pairs = set()
+def compute_set_difference(generated_constraints_path: str, augmented_constraints_path: str) -> list:
+    og_pairs = list()
+    aug_pairs = list()
     with io.open(file=generated_constraints_path, mode="r", encoding="utf-8") as og_pairs_file:
         for line in og_pairs_file.readlines():
             w0, w1 = line.split(" ")
-            og_pairs.add(tuple(sorted((w0, w1))))
+            og_pairs.append(tuple(sorted((w0, w1))))
 
     with io.open(file=augmented_constraints_path, mode="r", encoding="utf-8") as aug_pairs_file:
         for line in aug_pairs_file.readlines():
             w0, w1 = line.split(" ")
-            aug_pairs.add(tuple(sorted((w0, w1))))
+            aug_pairs.append(tuple(sorted((w0, w1))))
 
     print(len(aug_pairs))
     print(len(og_pairs))
-    return aug_pairs.difference(og_pairs)
+    # TODO: compute list difference
+    return []
+    # return unique(aug_pairs.difference(og_pairs))
 
 
-def _extract_sentences(root_path: str, constraint: Optional[str]) -> set:
-    sentences = set()
+def _extract_sentences(root_path: str, constraint: Optional[str]) -> list:
+    sentences = list()
 
     for root, _, files in os.walk(root_path, topdown=False):
         for file in files:
@@ -244,19 +254,19 @@ def _extract_sentences(root_path: str, constraint: Optional[str]) -> set:
                 common_examples = data["common_examples"]
 
                 for example in common_examples:
-                    sentences.add(example["text"])
-    return sentences
+                    sentences.append(example["text"])
+    return unique(sentences)
 
 
-def extract_all_sentences(root_path: str) -> set:
+def extract_all_sentences(root_path: str) -> list:
     return _extract_sentences(root_path, None)
 
 
-def extract_train_sentences(root_path: str) -> set:
+def extract_train_sentences(root_path: str) -> list:
     return _extract_sentences(root_path, "train")
 
 
-def extract_test_sentences(root_path: str) -> set:
+def extract_test_sentences(root_path: str) -> list:
     return _extract_sentences(root_path, "test")
 
 

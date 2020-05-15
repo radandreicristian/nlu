@@ -134,7 +134,7 @@ class Comparator:
             output_file.close()
 
     def compare_counterfit_pairs(self, original_vectors: dict, counterfit_vectors: dict, output_file: TextIO,
-                                 pairs: set) -> None:
+                                 pairs: list) -> None:
         valid_pairs = []
         for (w1, w2) in pairs:
             valid = self.report_pair(w1, w2, original_vectors, counterfit_vectors, output_file)

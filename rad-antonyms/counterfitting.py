@@ -8,7 +8,7 @@ from datetime import datetime
 
 import numpy as np
 
-import util.tools
+import util.tools as to
 from util.comparator import Comparator
 
 
@@ -61,31 +61,33 @@ class SettingConfig:
             antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
             synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
 
-        self.synonyms = util.tools.load_multiple_constraints(synonym_paths)
-        self.antonyms = util.tools.load_multiple_constraints(antonym_paths)
+        self.synonyms = to.load_multiple_constraints(synonym_paths)
+        self.antonyms = to.load_multiple_constraints(antonym_paths)
 
         # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
         mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
-        vocab = set()
+        vocab = list()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
             for line in vocab_file:
-                vocab.add(line.strip())
+                vocab.append(line.strip())
 
         # Add augmented words from synonyms list to the vocab
         for pair in self.synonyms:
             if pair[0] in vocab or pair[1] in vocab:
-                vocab.add(pair[0])
-                vocab.add(pair[1])
+                vocab.append(pair[0])
+                vocab.append(pair[1])
 
         # Add augmented words from antonym lists to the vocab
         for pair in self.antonyms:
             if pair[0] in vocab or pair[1] in vocab:
-                vocab.add(pair[0])
-                vocab.add(pair[1])
+                vocab.append(pair[0])
+                vocab.append(pair[1])
+
+        vocab = to.unique(vocab)
 
         # Load the word vectors
-        dimensions, self.vectors = util.tools.load_vectors(self.input_vectors_path, vocab)
+        dimensions, self.vectors = to.load_vectors(self.input_vectors_path, set(vocab))
 
         # Return if vectors were not successfully loaded
         if not self.vectors:
@@ -97,7 +99,7 @@ class SettingConfig:
 
         # The vocabulary contains the keys of vectors successfully loaded by the initial vocabulary: Words in the
         # initial vocabulary with no corresponding vector are skipped
-        self.vocabulary = set(self.vectors.keys())
+        self.vocabulary = to.unique(self.vectors.keys())
 
         self.dimensions = f"{len(self.vocabulary)} {dimensions.split(' ')[1]}"
 
@@ -131,7 +133,7 @@ class SettingConfig:
                 f" delta={self.delta}, gamma={self.gamma}, rho={self.rho}, sgd_iters={self.sgd_iters}")
 
 
-def compute_vsp_pairs(vectors: dict, vocab: set, config: SettingConfig) -> dict:
+def compute_vsp_pairs(vectors: dict, vocab: list, config: SettingConfig) -> dict:
     print(f"Computing VSP pairs @ {datetime.now()}")
     vsp_pairs = dict()
     if not config.rho:
@@ -194,25 +196,26 @@ def compute_vsp_pairs(vectors: dict, vocab: set, config: SettingConfig) -> dict:
         # TODO: Figure which is the more appropriate one
         gc.collect()
     print(f"Computed VSP pairs @ {datetime.now()}")
-    util.tools.save_dict_to_file(vsp_pairs, config.vsp_path)
+    to.save_dict_to_file(vsp_pairs, config.vsp_path)
     return vsp_pairs
 
 
-def _sgd_step_ant(antonym_pairs: set, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
+def _sgd_step_ant(antonym_pairs: list, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
     # For each antonym pair
+    vocab = set(config.vocabulary)
     for (w0, w1) in antonym_pairs:
 
         # Extra check for reduced vocabulary:
-        if w0 not in config.vocabulary or w1 not in config.vocabulary:
+        if w0 not in vocab or w1 not in vocab:
             break
 
         # Compute distance in new vector space
-        dist = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        dist = to.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist < config.delta:
 
             # Compute the partial gradient
-            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
 
             # Weight it by K1
             gradient *= config.hyper_k1
@@ -225,17 +228,18 @@ def _sgd_step_ant(antonym_pairs: set, enriched_vectors: dict, config: SettingCon
     return gradient_updates, update_count
 
 
-def _sgd_step_syn(synonym_pairs: set, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
+def _sgd_step_syn(synonym_pairs: list, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
+    vocab = set(config.vocabulary)
     for (w0, w1) in synonym_pairs:
 
         # Extra check for reduced vocabulary:
-        if w0 not in config.vocabulary or w1 not in config.vocabulary:
+        if w0 not in vocab or w1 not in vocab:
             break
 
-        dist = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        dist = to.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist > config.gamma:
-            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k2
             if w1 in gradient_updates:
                 gradient_updates[w1] += gradient
@@ -248,17 +252,17 @@ def _sgd_step_syn(synonym_pairs: set, enriched_vectors: dict, config: SettingCon
 
 def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
+    vocab = set(config.vocabulary)
     for (w0, w1) in vsp_pairs:
-
         # Extra check for reduced vocabulary:
-        if w0 not in config.vocabulary or w1 not in config.vocabulary:
+        if w0 not in vocab or w1 not in vocab:
             break
 
         original_distance = vsp_pairs[(w0, w1)]
-        new_distance = util.tools.distance(enriched_vectors[w0], enriched_vectors[w1])
+        new_distance = to.distance(enriched_vectors[w0], enriched_vectors[w1])
 
         if original_distance <= new_distance:
-            gradient = util.tools.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
+            gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k3
 
             if w0 in gradient_updates:
@@ -270,7 +274,7 @@ def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig
     return gradient_updates, update_count
 
 
-def sgd_step(vectors: dict, synonym_pairs: set, antonym_pairs: set, vsp_pairs: dict, config: SettingConfig):
+def sgd_step(vectors: dict, synonym_pairs: list, antonym_pairs: list, vsp_pairs: dict, config: SettingConfig):
     enriched_vectors = deepcopy(vectors)
     gradient_updates = dict()
     update_count = dict()
@@ -294,7 +298,7 @@ def sgd_step(vectors: dict, synonym_pairs: set, antonym_pairs: set, vsp_pairs: d
         update_term = gradient_updates[word] / (update_count[word])
         enriched_vectors[word] += update_term
 
-    return util.tools.normalise(enriched_vectors)
+    return to.normalise(enriched_vectors)
 
 
 def counterfit(config: SettingConfig) -> dict:
@@ -339,7 +343,7 @@ def run_experiment(config_path):
     enriched_vectors = counterfit(config)
 
     # Store all the counterfitting vectors
-    util.tools.store_vectors(dimens=config.dimensions, dst_path=config.output_vectors_path, vectors=enriched_vectors)
+    to.store_vectors(dimens=config.dimensions, dst_path=config.output_vectors_path, vectors=enriched_vectors)
 
     config.init_comparator(config_path, enriched_vectors)
 

@@ -10,11 +10,14 @@ from typing import Optional
 
 import rowordnet as rwn
 
+from util.tools import unique
+
 
 class SettingConfig:
 
     def __init__(self, config_path):
 
+        print("Initializing configuration for relations generator...")
         # Read the config file
         self.config = configparser.RawConfigParser()
         try:
@@ -39,14 +42,18 @@ class SettingConfig:
 
         vocab_path = self.config.get("paths", "VOCAB_PATH")
 
-        self.vocabulary = set()
+        self.vocabulary = list()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
             for line in vocab_file:
-                self.vocabulary.add(line.strip())
-        print(len(self.vocabulary))
+                self.vocabulary.append(line.strip())
+        self.vocabulary = set(unique(self.vocabulary))
+        print(f"Loaded {len(self.vocabulary)} words from {vocab_path}")
+        print(
+            f"Finished initializing config for relations generator. Will output results to {self.constraints_root_path}")
 
 
 def process_line(raw_line: str) -> Optional[str]:
+    # Replace all reflexive forms
     to_replace = ["[se]", "|se|", "[-și]", "[o]", "|-și|", "|și|", "[-i]", "[i]", "[și]", "a "]
     for sub in to_replace:
         raw_line = raw_line.replace(sub, "")
@@ -57,8 +64,7 @@ def process_line(raw_line: str) -> Optional[str]:
     words = processed_line.split(' ')
 
     # Return the pair as a string "word1 word2"
-    # Or the empty string if the words are the same or contain eachother
-    # return "" if len(words) != 2 or words[1] in words[0] or words[0] in words[1] else " ".join(words)
+    # Or the empty string if the words are the same or contain each other, or ar capital nouns
     if len(words) != 2:
         return None
     if words[1] in words[0] or words[0] in words[1]:
@@ -68,32 +74,27 @@ def process_line(raw_line: str) -> Optional[str]:
     return " ".join(words)
 
 
-def postprocess_pairs(raw_pairs: set, config: SettingConfig) -> set:
-    print(f"Started preprocessing pairs @ {datetime.now()}")
-
-    processed_pairs = set()
+def postprocess_pairs(raw_pairs: list, config: SettingConfig) -> list:
+    processed_pairs = list()
 
     for raw_pair in raw_pairs:
         # Preprocess each line
         raw_line = " ".join(raw_pair)
-        print(f"raw line {raw_line}")
         processed_line = process_line(raw_line)
 
         # If the processed line is not empty (meaning we have 2 different words separated by a space)
         if processed_line:
-            print(f"Preprocessed line result: {processed_line}")
             # Split the words
             w1, w2 = processed_line.split(" ")
 
             # Check if both are in the dictionary
             if w1 in config.vocabulary and w2 in config.vocabulary:
-                processed_pairs.add((w1, w2))
-    print(f"Successfully finished preprocessing pairs")
-    return processed_pairs
+                processed_pairs.append((w1, w2))
+    return unique(processed_pairs)
 
 
-def write_pairs(pairs: set, root_path: str, pos: str, name: str) -> str:
-    print(f"Writing pairs to file @ {datetime.now()}")
+def write_pairs(pairs: list, root_path: str, pos: str, name: str) -> str:
+    print(f"Writing {pos} pairs to file")
     dir_path = os.path.join(root_path, pos)
 
     try:
@@ -130,7 +131,7 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
     # Iterate over the selected parts of speech
     for part_of_speech in config.pos.values():
 
-        pos_pairs = set()
+        pos_pairs = list()
 
         # Return all synsets corresponding to the PoS
         synset_ids = wn.synsets(pos=part_of_speech)
@@ -157,17 +158,17 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
                 target_literals = target_synset.literals
 
                 # Get all the pairs, sort them by first word to keep set entries unique
-                current_iteration_pairs = set(
+                current_iteration_pairs = unique(
                     [tuple(sorted((w1, w2), key=itemgetter(0))) for w1 in current_literals for w2 in target_literals])
 
                 # Add the current set of pairs
                 for pair in current_iteration_pairs:
-                    pos_pairs.add(pair)
+                    pos_pairs.append(pair)
 
         # Get corresponding key in pos dictionary and add the pair to the resulting dictionary
         for key, value in config.pos.items():
             if value == part_of_speech:
-                pairs[key] = pos_pairs
+                pairs[key] = unique(pos_pairs)
 
     # Return the whole dictionary
     print(f"Successfully generated antonym paris @ {datetime.now()}")
@@ -185,7 +186,7 @@ def generate_raw_synonym_pairs(config: SettingConfig) -> dict:
     # Iterate over the selected parts of speech
     for part_of_speech in config.pos.values():
 
-        pos_pairs = set()
+        pos_pairs = list()
 
         # Return all synsets corresponding to the PoS
         synset_ids = wn.synsets(pos=part_of_speech)
@@ -199,17 +200,17 @@ def generate_raw_synonym_pairs(config: SettingConfig) -> dict:
             literals = synset.literals
 
             # Get all the pairs, sort them by first word to keep set entries unique
-            current_iteration_pairs = set(
+            current_iteration_pairs = unique(
                 [tuple(sorted((w1, w2), key=itemgetter(0))) for w1 in literals for w2 in literals if not w1 == w2])
 
             # Append all pairs from the current PoS to the global set
             for pair in current_iteration_pairs:
-                pos_pairs.add(pair)
+                pos_pairs.append(pair)
 
         # Get corresponding key in pos dictionary and add the pair to the resulting dictionary
         for key, value in config.pos.items():
             if value == part_of_speech:
-                pairs[key] = pos_pairs
+                pairs[key] = unique(pos_pairs)
 
     print(f"Successfully generated synonym pairs {datetime.now()}")
     return pairs
