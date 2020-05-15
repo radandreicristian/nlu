@@ -10,7 +10,7 @@ from typing import Optional
 
 import rowordnet as rwn
 
-from util.tools import unique
+from util.tools import unique, remove_phrases
 
 
 class SettingConfig:
@@ -144,7 +144,7 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
             outbound_relations = filter(lambda x: x[1] == 'near_antonym', wn.outbound_relations(synset_id))
 
             # Get the literals
-            current_literals = synset.literals
+            current_literals = remove_phrases(synset.literals)
 
             # Iterate outbound relations
             for relation in outbound_relations:
@@ -153,7 +153,7 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
                 target_synset = wn.synset(relation[0])
 
                 # Get the literals in the synset above
-                target_literals = target_synset.literals
+                target_literals = remove_phrases(target_synset.literals)
 
                 # Get all the pairs, sort them by first word to keep set entries unique
                 current_iteration_pairs = unique(
@@ -195,7 +195,7 @@ def generate_raw_synonym_pairs(config: SettingConfig) -> dict:
             # Get the synset object specified by synset_id
             synset = wn.synset(synset_id)
 
-            literals = synset.literals
+            literals = remove_phrases(synset.literals)
 
             # Get all the pairs, sort them by first word to keep set entries unique
             current_iteration_pairs = unique(

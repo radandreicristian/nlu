@@ -16,6 +16,27 @@ def unique(l: list) -> list:
     return list(dict.fromkeys(l))
 
 
+def remove_phrases(words: list) -> list:
+    # We need to sanitize synsets from phrasal expressions that contain "_"
+    phrasal_expression_slices = set()
+    phrasal_expressions = set()
+
+    # Get all phrasal expressions (that contain '_')
+    for word in words:
+        if '_' in word:
+            split_word = word.split("_")
+            for w in split_word:
+                phrasal_expression_slices.add(w)
+            phrasal_expressions.add(word)
+
+    valid_members = list()
+    # Get all the words that are in the synset but not part of the phrasal expression:
+    for word in words:
+        if word not in phrasal_expression_slices and word not in phrasal_expressions:
+            valid_members.append(word)
+    return valid_members
+
+
 def load_vectors(src_path: str, vocab: set) -> (Optional[str], dict):
     print(f"Started loading vectors from {src_path} @ {datetime.now()}")
     print(f"No. of words in vocabulary: {len(vocab)}")

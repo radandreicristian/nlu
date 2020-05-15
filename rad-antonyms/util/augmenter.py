@@ -83,7 +83,7 @@ class Augmenter:
 
         return synonym_output_pairs, antonym_output_pairs
 
-    def update_pairs(self, target_word: str, target_lemma: str, constraint_pairs: set) -> set:
+    def update_pairs(self, target_word: str, target_lemma: str, constraint_pairs: list) -> set:
 
         # Create a set that will contain pairs of lemma words from the constraints
         lemma_pairs = set()
@@ -142,7 +142,7 @@ class Augmenter:
 
         return conjugated_pairs
 
-    def process_dataset(self, sentences: set) -> None:
+    def process_dataset(self, sentences: list) -> None:
         synonyms_file = io.open(file=self.augmented_synonyms_path, mode="w", encoding="utf-8")
         antonyms_file = io.open(file=self.augmented_antonyms_path, mode="w", encoding="utf-8")
 
@@ -167,7 +167,7 @@ def main():
         config_filepath = "parameters.cfg"
         rasa_filepath = "config.yml"
     augmenter = Augmenter(config_filepath, rasa_filepath)
-    sentences = tools.extract_sentences("datasets/cu_diacritice")
+    sentences = tools.extract_all_sentences("datasets/cu_diacritice")
     augmenter.process_dataset(sentences)
 
 
