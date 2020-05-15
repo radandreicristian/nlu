@@ -113,10 +113,8 @@ def write_pairs(pairs: list, root_path: str, pos: str, name: str) -> str:
         for pair in pairs:
             out.write(f"{pair[0]} {pair[1]}\n")
 
-        # Close the output file
         out.close()
 
-    print(f"Successfully written pairs to file @ {datetime.now()}")
     return constraints_path
 
 
