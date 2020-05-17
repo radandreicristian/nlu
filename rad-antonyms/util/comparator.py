@@ -10,44 +10,14 @@ from util import tools
 
 
 def compare_embeddings(path1, path2):
-    file1 = io.open(file=path1, mode="r", encoding="utf-8")
-    file2 = io.open(file=path2, mode="r", encoding="utf-8")
 
     # Load first vecs:
     print("Loading first vectors...")
-    words1 = dict()
-    dimensions = str(next(file1))
-    if len(dimensions.split(" ")) == 2:
-        # We have a dimensions line. Keep it in the variable, continue with the next lines
-        pass
-    else:
-        # We do not have a dimensions line
-        line = dimensions.split(' ', 1)
-        key = line[0]
-        words1[key] = np.fromstring(line[1], dtype="float32", sep=' ')
-        dimensions = None
-    for line in file1:
-        line = line.split(' ', 1)
-        key = line[0]
-        words1[key] = np.fromstring(line[1], dtype="float32", sep=' ')
+    words1 = tools.load_vectors_novocab(path1)
     print("Loaded first vectors.")
 
     print("Loading second vectors...")
-    words2 = dict()
-    dimensions = str(next(file2))
-    if len(dimensions.split(" ")) == 2:
-        # We have a dimensions line. Keep it in the variable, continue with the next lines
-        pass
-    else:
-        # We do not have a dimensions line
-        line = dimensions.split(' ', 1)
-        key = line[0]
-        words2[key] = np.fromstring(line[1], dtype="float32", sep=' ')
-        dimensions = None
-    for line in file2:
-        line = line.split(' ', 1)
-        key = line[0]
-        words2[key] = np.fromstring(line[1], dtype="float32", sep=' ')
+    words2 = tools.load_vectors_novocab(path2)
     print("Loaded second vectors.")
 
     count = 0
@@ -164,9 +134,4 @@ class Comparator:
                 f"\tCos between original/counterfit {w1}: {tools.cos_sim(og_vecs[w1], cf_vecs[w1])}\n"
                 f"\tCos between original/counterfit {w2}: {tools.cos_sim(og_vecs[w2], cf_vecs[w2])}\n"
                 f"\tOriginal cos for {w1}/{w2}: {tools.cos_sim(og_vecs[w1], og_vecs[w2])}\n"
-                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(cf_vecs[w1], cf_vecs[w2])}\n")
-
-
-if __name__ == '__main__':
-    compare_embeddings('../lang/vectors/ro_ft_300_allpos_rwn_ant_syn_augpairs_1588855064.vec',
-                       '../lang/vectors/ro_ft_300_allpos_rwn_ant_syn_augpairs_1588856432.vec')
+                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(cf_vecs[w1], cf_vecs[w2])}\n\n")

@@ -5,15 +5,40 @@ import re
 import string
 from datetime import datetime
 from math import sqrt
+from operator import itemgetter
 from os.path import isfile, isdir
 from typing import Optional
 
 import gensim.models as gs
 import numpy as np
+from rowordnet import Synset
 
 
 def unique(l: list) -> list:
     return list(dict.fromkeys(l))
+
+
+def process_pair(words: tuple) -> Optional[tuple]:
+    # Replace all reflexive forms
+    to_replace = ["[se]", "|se|", "[-și]", "[o]", "|-și|", "|și|", "[-i]", "[i]", "[și]", "a "]
+    raw_line = " ".join(words)
+    for sub in to_replace:
+        raw_line = raw_line.replace(sub, "")
+
+    # Replace multiple spaces, strip beginning / ending spaces
+    processed_line = re.sub('\s{2,}', ' ', raw_line).strip()
+
+    words = processed_line.split(' ')
+
+    # Return the pair as a string "word1 word2"
+    # Or the empty string if the words are the same or contain each other, or ar capital nouns
+    if len(words) != 2:
+        return None
+    if words[1] in words[0] or words[0] in words[1]:
+        return None
+    if words[1][0].isupper() or words[0][0].isupper():
+        return None
+    return tuple(words)
 
 
 def remove_phrases(words: list) -> list:
@@ -55,11 +80,7 @@ def load_vectors(src_path: str, vocab: set) -> (Optional[str], dict):
                 if key in vocab:
                     words[key] = np.fromstring(line[1], dtype="float32", sep=' ')
                 dimensions = None
-            index = 0
             for line in source_file:
-                if index % 10000 == 0:
-                    print(index)
-                index += 1
                 line = line.split(' ', 1)
                 key = line[0]
                 if key in vocab:
@@ -126,7 +147,7 @@ def cos_sim(v1, v2):
 
 
 def partial_gradient(u, v, normalised=True):
-    # Partial gradient, optimized as per counterfitting implementation
+    # Computes partial derivative of the cosine distance with respect to u
     if normalised:
         return u * np.dot(u, v) - v
     else:
@@ -291,6 +312,29 @@ def extract_test_sentences(root_path: str) -> list:
     return _extract_sentences(root_path, "test")
 
 
-if __name__ == "__main__":
-    diff = compute_set_difference("../lang/constraints/verb/antonyms.txt", "../lang/constraints/verb/antonyms_aug.txt")
-    print(diff)
+def get_cross_synset_pairs(src_synset: Synset, dst_synset: Synset) -> list:
+    # Remove phrasal expressions from the literals
+    src_literals = remove_phrases(src_synset.literals)
+    dst_literals = remove_phrases(dst_synset.literals)
+
+    # Generates a list of unique pairs representing the cartesian product of the list of literals of the two synsets
+    return unique([tuple(sorted((w1, w2), key=itemgetter(0))) for w1 in src_literals for w2 in dst_literals])
+
+
+def get_synset_pairs(synset: Synset) -> list:
+    # Remove phrasal expressions from the literals
+    literals = remove_phrases(synset.literals)
+
+    # Generate a list of unique pairs representing the cartesian product of the list of literals of the single synset
+    pairs = unique([tuple(sorted((w1, w2), key=itemgetter(0))) for w1 in literals for w2 in literals if not w1 == w2])
+    return pairs
+
+
+def append_constraints_to_file(constraints: list, src_path: str):
+    with io.open(file=src_path, mode="a", encoding="utf-8") as src_file:
+        for constraint in constraints:
+            if type(constraint) is not tuple:
+                raise TypeError('List of tuples expected.')
+            line = f"{constraint[0]} {constraint[1]}\n"
+            src_file.write(line)
+        src_file.close()

@@ -72,7 +72,7 @@ def analyze_antonyms(dump_path: str) -> None:
 
 
 def analyze_any(dump_path: str) -> None:
-    # List of
+    # TODO
     errors = []
     with io.open(file=dump_path, mode="r", encoding="utf-8") as input_file:
 

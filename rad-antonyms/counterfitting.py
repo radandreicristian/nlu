@@ -56,6 +56,7 @@ class SettingConfig:
                                                                                                             "").split(
             ",")
 
+        print("Loading constraints...")
         # Append antonyms and synonyms of each selected PoS from their respective folder
         for part_of_speech in self.parts_of_speech:
             antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
@@ -64,29 +65,36 @@ class SettingConfig:
         self.synonyms = to.load_multiple_constraints(synonym_paths)
         self.antonyms = to.load_multiple_constraints(antonym_paths)
 
+        print("Loaded constraints.")
         # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
         mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
         vocab = list()
+
+        print("Loading vocabulary...")
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
             for line in vocab_file:
                 vocab.append(line.strip())
 
         # Add augmented words from synonyms list to the vocab
+        # Small optimization trick for O(1) lookup:
+        vocab_set = set(vocab)
         for pair in self.synonyms:
-            if pair[0] in vocab or pair[1] in vocab:
+            if pair[0] in vocab_set or pair[1] in vocab_set:
                 vocab.append(pair[0])
                 vocab.append(pair[1])
 
         # Add augmented words from antonym lists to the vocab
         for pair in self.antonyms:
-            if pair[0] in vocab or pair[1] in vocab:
+            if pair[0] in vocab_set or pair[1] in vocab_set:
                 vocab.append(pair[0])
                 vocab.append(pair[1])
 
         vocab = to.unique(vocab)
+        print("Loaded vocabulary.")
 
         # Load the word vectors
+        print("Loading word vectors...")
         dimensions, self.vectors = to.load_vectors(self.input_vectors_path, set(vocab))
 
         # Return if vectors were not successfully loaded
@@ -94,6 +102,7 @@ class SettingConfig:
             print("Unable to load initial vectors")
             return
 
+        print("Loaded word vectors ")
         self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
                                        0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec"
 
