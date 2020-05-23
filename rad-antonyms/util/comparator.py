@@ -4,33 +4,13 @@ import os
 import pathlib
 from typing import Optional, TextIO
 
-import numpy as np
-
 from util import tools
 
 
-def compare_embeddings(path1, path2):
-
-    # Load first vecs:
-    print("Loading first vectors...")
-    words1 = tools.load_vectors_novocab(path1)
-    print("Loaded first vectors.")
-
-    print("Loading second vectors...")
-    words2 = tools.load_vectors_novocab(path2)
-    print("Loaded second vectors.")
-
-    count = 0
-    for key in words1.keys():
-        if not np.array_equal(words1[key], words2[key]):
-            print(f"different embeddings for {key}")
-            count += 1
-
-    print(f"Different vectors : {count} / {len(words1)}")
-
-
 class Comparator:
-
+    """
+    Class that performs the comparation between two sets of vectors: the original and the counterfit version.
+    """
     def __init__(self, config_path: str, original_vectors: dict, counterfit_vectors: dict, **kwargs):
 
         self.config = configparser.RawConfigParser()
@@ -103,11 +83,18 @@ class Comparator:
             self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_synonyms)
             output_file.close()
 
-    def compare_counterfit_pairs(self, original_vectors: dict, counterfit_vectors: dict, output_file: TextIO,
+    def compare_counterfit_pairs(self, original_vectors: dict, enhanced_vectors: dict, output_file: TextIO,
                                  pairs: list) -> None:
+        """
+        :param original_vectors: Original word vectors, as a dictionary.
+        :param enhanced_vectors: Enhanced word vectors, as a dictioanry.
+        :param output_file: The file where the stats are written.
+        :param pairs: The pre-defined pairs on which the comparison is done.
+        :return: None
+        """
         valid_pairs = []
         for (w1, w2) in pairs:
-            valid = self.report_pair(w1, w2, original_vectors, counterfit_vectors, output_file)
+            valid = self.report_pair(w1, w2, original_vectors, enhanced_vectors, output_file)
             if valid:
                 valid_pairs.append(valid)
         output_file.write(f"\n Counterfit pairs with significant increase ( distance diff. > {self.epsilon})"
@@ -116,22 +103,37 @@ class Comparator:
         for pair in valid_pairs:
             output_file.write(f"\t{pair[0], pair[1]}".replace("'", "").replace(']', '').replace('[', ''))
 
-    def report_pair(self, w1: str, w2: str, og_vecs: dict, cf_vecs: dict, output_file: TextIO) -> Optional[tuple]:
-        # Compute and write the pair stats to file
-        stats = self.compute_pair_stats(w1, w2, og_vecs, cf_vecs)
+    def report_pair(self, w1: str, w2: str, original_vectors: dict, enhanced_vectors: dict, output_file: TextIO) -> Optional[tuple]:
+        """
+        Writes the pair stats of w1 and w2 and returns them if they are a valid pair.
+        :param w1: The first word, as a string.
+        :param w2: The second word, as a string.
+        :param original_vectors: Original word vectors, as a dictionary.
+        :param enhanced_vectors: Enhanced word vectors, as a dictioanry.
+        :param output_file:
+        :return: The pair containing the two words if they cosine distance > epsilon
+        """
+        stats = self.compute_pair_stats(w1, w2, original_vectors, enhanced_vectors)
         output_file.write(stats)
 
         # Return the pair if the abs of the difference of cos similarities between original and counterfit
         # vectors is greater than epsilon
         return (w1, w2) if abs(
-            float(tools.cos_sim(og_vecs[w1], og_vecs[w2]) - tools.cos_sim(cf_vecs[w1], cf_vecs[w2]))) > float(
+            float(tools.cos_sim(original_vectors[w1], original_vectors[w2]) - tools.cos_sim(enhanced_vectors[w1], enhanced_vectors[w2]))) > float(
             self.epsilon) else None
 
     @staticmethod
-    def compute_pair_stats(w1: str, w2: str, og_vecs: dict, cf_vecs: dict) -> str:
-        # Simply return a formatted string containing the full report of a pair of words
+    def compute_pair_stats(w1: str, w2: str, original_vectors: dict, enhanced_vectors: dict) -> str:
+        """
+        Simply return a formatted string containing the full report of a pair of words
+        :param w1: The first word, as a string. 
+        :param w2: The second word, as a string.
+        :param original_vectors: Original word vectors, as a dictionary.
+        :param enhanced_vectors: Enhanced word vectors, as a dictionary.
+        :return: 
+        """
         return (f"Similarity report for {w1}, {w2}:\n"
-                f"\tCos between original/counterfit {w1}: {tools.cos_sim(og_vecs[w1], cf_vecs[w1])}\n"
-                f"\tCos between original/counterfit {w2}: {tools.cos_sim(og_vecs[w2], cf_vecs[w2])}\n"
-                f"\tOriginal cos for {w1}/{w2}: {tools.cos_sim(og_vecs[w1], og_vecs[w2])}\n"
-                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(cf_vecs[w1], cf_vecs[w2])}\n\n")
+                f"\tCos between original/counterfit {w1}: {tools.cos_sim(original_vectors[w1], enhanced_vectors[w1])}\n"
+                f"\tCos between original/counterfit {w2}: {tools.cos_sim(original_vectors[w2], enhanced_vectors[w2])}\n"
+                f"\tOriginal cos for {w1}/{w2}: {tools.cos_sim(original_vectors[w1], original_vectors[w2])}\n"
+                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(enhanced_vectors[w1], enhanced_vectors[w2])}\n\n")
