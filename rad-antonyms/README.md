@@ -1,29 +1,61 @@
-# Generating Antonym/Synonym Pairs from RWN, Counterfitting, RASA Pipeline.
+# SEMANTIC AUGMENTER, RASA NLU PIPELINE
 
-## Vocabulary Generator
-The vocab_generator.py script generates vocabularies from the folder containing datasets, which is specified as a path in parameters.cfg file. It saves the vocabularies in the paths that are also specified the configuration file.
+## Overall Project Strucutre and Configuration
+The project contains Python scripts used in the pipeline, tools, linguistinc data and task-specific training and testing data.
+ 
+ The 'datasets' folder contains structured RASA NLU training and testing JSON files. 
 
-## Relations Generator - Parameters
-The relations_generator.py script generates synonym and antonym pairs from RoWordNet and stores them, according to their part-of-speech. The subfolders corresponding to each of the four parts of speech, verb, adverb, noun, adjective, will be generated under the path specified by CONSTRAINTS_ROOT_PATH in parameters.cfg.
+The 'lang' folder contains linguistic data and specifications, such as synonym/antonym thesauri, vocabularies and **SHOULD ALSO INCLUDE WORD VECTORS** (which are too large for a VCS), in lang/vectors. (See VEC_PATH in parameters.cfg or Additional Files section)
+
+The 'utils' folder contains helper scripts 
+
+The root folder contains RASA NLU data and the main scripts used in the pipeline.
+
+## Pipeline Description
+
+The pipeline incorporates 5 main steps.
+
+* Semantic Relations Generator.
+* Verb Exctraction and Augmenting.
+* Counterfitting.
+* SpaCy Model Creation.
+* RASA Training and Inference.
+
+### Relations Generator 
+The /relations_generator.py script generates synonym and antonym pairs from RoWordNet and stores them, according to their part-of-speech. The subfolders corresponding to each of the four parts of speech, verb, adverb, noun, adjective, will be generated under the path specified by CONSTRAINTS_ROOT_PATH in parameters.cfg.
 Once generated, the pairs can be used in the next components of the pipeline.
 
-## Counterfitting - Parameters
+### Verb Extraction and Augmenting
+In util/semantic_augmenter.py are the functions responsible for augmenting the antonym verb pairs.
+* Verb lemma & conjugation times extraction.
+* Synset construction.
+* Conjugation of pairs and appending to the initial pairs.
+
+### Counterfitting - Parameters
 Counterfitting runs can be parametrized from the ./parameters.cfg file. 
-Before running counterfitting, please add the original vectors file in lang/vectors or change its path in ./parameters.cfg
+Before running counterfitting, please add the original vectors file in lang/vectors or change its path in ./parameters.cfg. As a command line parameter, it takes the name of the language (an identifier) for the newly generated verbs. Running counterfitting will modify the word vectors to be according to the linguistic constraints provided by the previous steps of the pipeline. Counterfitting generates a comparative analysis of certain pairs and stores the modified vectors.
 
+### SpaCy Mode Createion
+A language model based on the vectors created by the previous step is setup by util/init_spacy_lang.py script. If used individually, parameters for output paths, language name and identifier and vectors locations are to be provided. These parameters are otherwise automatically provided by the context and previous steps of the pipeline. After this step, you should be able to load the model in a RASA run, using pretrained_embeddings_spacy and the generated language.
+
+### RASA Training and Inference
+The final steps of the pipeline is to train and test a RASA NLU model, based on the language model provided and training data. /rasa_pipeline.py handles the last steps, as well as calls to the previous components.
+
+
+### Pipeline Configuration
+There is a single common configuration file for the whole pipeline, which includes paths used throughout the project and settings parameters/hyperparameters for some components.
 The paths section includes paths relative to the project root where the input / output files of the run are stored.
-As input, paths containing the vocabulary path and original vectors path are provided. 
-As output, a path to where the counterfit vectors are to be stored is provided.
 
-The settings sections include what to be taken into account for the counterfit run:
-The 'MODE' parameter indicates which of the 3 terms to be included in the cost function: AR, SA, VSP. Explicitly, it is a subset of [ant, syn, vsp], with each term being associated to its correspondent in the cost function. For instance, if MODE = [ant], the cost function will only contain the AR term, therfore only antonym pairs will be enhanced.
-The 'VOCABULARY' parameter indicates which vocabulary to use for the counterfit run: The whole vocabulary, or a smaller vocabulary, composed of words from our datasets +/-. Its values can be either 'all', for the whole vocabulary,  or 'small', for the dataset vocabulary. Based on this, the script chooses from the two vocabulary paths provided above.
-The 'DIACRITICS' parameter sets whether the vocabulary generated based on the datasets with diacritics or the ones without should be used. Values can be either True or False.
-The 'POS' parameter collects antonym and synonym pairs only from the folders according to the PoSes specified. 
 
-The hyperparameters section includes hyperparameters for the counterfit run, as described in the paper.
-Hyper_k1, hyper_k2, hyper_3 are the weights of the AR, SA, respectively VSP terms in the cost function.
-Delta - the intuitive minimum distance between antonymous words.
-Gamma - the ideal maximum distance between synonymous words.
-Rho - the maximum difference between two words for them to be considered a VSP pair.
-Sgd_iters - number of iterations of stochastic gradient descent performed for minimising the cost function.
+### Additional Files
+Some files are not in this repository, but will be needed.
+* Google spreadsheet secret JSON: (Follow the tutorial on https://bit.ly/3c101g6) Save the JSON secret in the folder, then change its name / configure it in rasa_pipeline.py.
+* Romanian base SpaCy model with PoS Tagger / Parser (available here: https://bit.ly/36qsomO). Store this preferably in models/out/ and then perform spacy linking step:
+ 
+```spacy link **ABSOLUTE_PATH_TO_THE_EXTRACTED_FOLDER/ro_model-0.0.0/ro_model** ro_ft_300``` 
+* Romanian base word vectors (fastText - available here https://bit.ly/3cYdcQi) unarchieve and add to lang/vectors.
+
+### Running:
+``` pip install requirements.txt  ```
+
+``` python ./rasa_pipeline.py```

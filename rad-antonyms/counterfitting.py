@@ -1,12 +1,8 @@
+import argparse
 import configparser
-import gc
 import os.path
-import random
-import sys
 from copy import deepcopy
 from datetime import datetime
-
-import numpy as np
 
 import util.tools as to
 from util.comparator import Comparator
@@ -17,7 +13,7 @@ class SettingConfig:
     Class that encapsulates all the parameters and variables required for a counterfitting run
     """
 
-    def __init__(self, config_path):
+    def __init__(self, config_path, language_model_name):
 
         # Read the config file
         self.config = configparser.RawConfigParser()
@@ -65,6 +61,10 @@ class SettingConfig:
         self.synonyms = to.load_multiple_constraints(synonym_paths)
         self.antonyms = to.load_multiple_constraints(antonym_paths)
 
+        vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
+
+        self.vsp_pairs = to.load_vsp_pairs(vsp_path)
+
         print("Loaded constraints.")
         # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
         mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
@@ -103,8 +103,11 @@ class SettingConfig:
             return
 
         print("Loaded word vectors ")
-        self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
-                                       0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec"
+        if language_model_name:
+            self.output_vectors_path = f"{self.config.get('paths', 'VEC_ROOT_PATH')}/{language_model_name}.vec"
+        else:
+            self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
+                                           0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec"
 
         # The vocabulary contains the keys of vectors successfully loaded by the initial vocabulary: Words in the
         # initial vocabulary with no corresponding vector are skipped
@@ -114,7 +117,6 @@ class SettingConfig:
 
         # Load synonym and antonym pairs from the paths specified
         self.mode = mode
-        self.vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
 
         # Read the hyperparameters of our run
         self.hyper_k1 = self.config.getfloat("hyperparameters", "hyper_k1")
@@ -142,76 +144,21 @@ class SettingConfig:
                 f" delta={self.delta}, gamma={self.gamma}, rho={self.rho}, sgd_iters={self.sgd_iters}")
 
 
-def compute_vsp_pairs(vectors: dict, vocab: list, config: SettingConfig) -> dict:
-    print(f"Computing VSP pairs @ {datetime.now()}")
-    vsp_pairs = dict()
-    if not config.rho:
-        rho = 0.2
-    else:
-        rho = config.rho
-    th = 1 - rho
-    vocab = list(vocab)
-    words_count = len(vocab)
-
-    step_size = 1000
-    vec_size = random.choice(list(vectors.values())).shape[0]
-
-    # List of ranges of step size
-    ranges = list()
-
-    left_range_limit = 0
-    while left_range_limit < words_count:
-        # Create tuple of left range -> right range (min between nr of words (maximum) or left limit + step)
-        current_range = (left_range_limit, min(words_count, left_range_limit + step_size))
-        ranges.append(current_range)
-        left_range_limit += step_size
-
-    range_count = len(ranges)
-    for left_range in range(range_count):
-        for right_range in range(left_range, range_count):
-            print(f"LR: {left_range}/{range_count}. RR: {right_range}/{range_count}")
-            left_translation = ranges[left_range][0]
-            right_translation = ranges[right_range][0]
-
-            vecs_left = np.zeros((step_size, vec_size), dtype="float32")
-            vecs_right = np.zeros((step_size, vec_size), dtype="float32")
-
-            full_left_range = range(ranges[left_range][0], ranges[left_range][1])
-            full_right_range = range(ranges[right_range][0], ranges[right_range][1])
-
-            for index in full_left_range:
-                vecs_left[index - left_translation, :] = vectors[vocab[index]]
-
-            for index in full_right_range:
-                vecs_right[index - right_translation, :] = vectors[vocab[index]]
-
-            dot_product = vecs_left.dot(vecs_right.T)
-            indices = np.where(dot_product >= th)
-
-            pairs_count = indices[0].shape[0]
-            left_indices = indices[0]
-            right_indices = indices[1]
-
-            for index in range(0, pairs_count):
-                left_word = vocab[left_translation + left_indices[index]]
-                right_word = vocab[right_translation + right_indices[index]]
-
-                if left_word != right_word:
-                    score = 1 - dot_product[left_indices[index], right_indices[index]]
-                    vsp_pairs[(left_word, right_word)] = score
-                    vsp_pairs[(right_word, left_word)] = score
-        # Perform a garbage collection operation at the end of a left range iteration.
-        # If performed inside the inner for -> Significant impact on time, if outside impact on memory
-        # TODO: Figure which is the more appropriate one
-        gc.collect()
-    print(f"Computed VSP pairs @ {datetime.now()}")
-    to.save_dict_to_file(vsp_pairs, config.vsp_path)
-    return vsp_pairs
-
-
 def _sgd_step_ant(antonym_pairs: list, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
-    # For each antonym pair
+    """
+    Performs a single stochastic gradient descent step for antonym pairs.
+    :param antonym_pairs: List of tuples containing antonym pairs
+    :param enriched_vectors: The enriched vectors currently under computation
+    :param config: Configuration of the experiment run
+    :param gradient_updates: Dictionary of gradient updates. Keys are words and values are the so far
+    accumulated partial gradients of other vectors with respect the key.
+    :param update_count: Dictionary of counts of gradient updates. Keys are words and values are the number
+    of times another vector's gradient with respect to the key was calculated and accumulated in gradient_updates.
+    :return: The gradient updates and update counts but updated.
+    """
+
+    # Optimization trick for searching since in sets it's O(1)
     vocab = set(config.vocabulary)
     for (w0, w1) in antonym_pairs:
 
@@ -223,7 +170,7 @@ def _sgd_step_ant(antonym_pairs: list, enriched_vectors: dict, config: SettingCo
         dist = to.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist < config.delta:
 
-            # Compute the partial gradient
+            # Compute the partial gradient of the distance with respect to w0
             gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
 
             # Weight it by K1
@@ -239,6 +186,19 @@ def _sgd_step_ant(antonym_pairs: list, enriched_vectors: dict, config: SettingCo
 
 def _sgd_step_syn(synonym_pairs: list, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
+    """
+    Performs a single stochastic gradient descent step for synonym pairs.
+    :param synonym_pairs: List of tuples containing synonym pairs
+    :param enriched_vectors: The enriched vectors currently under computation
+    :param config: Configuration of the experiment run
+    :param gradient_updates: Dictionary of gradient updates. Keys are words and values are the so far
+    accumulated partial gradients of other vectors with respect the key.
+    :param update_count: Dictionary of counts of gradient updates. Keys are words and values are the number
+    of times another vector's gradient with respect to the key was calculated and accumulated in gradient_updates.
+    :return: The gradient updates and update counts but updated.
+    """
+
+    # Optimization trick for searching since in sets it's O(1)
     vocab = set(config.vocabulary)
     for (w0, w1) in synonym_pairs:
 
@@ -248,6 +208,8 @@ def _sgd_step_syn(synonym_pairs: list, enriched_vectors: dict, config: SettingCo
 
         dist = to.distance(enriched_vectors[w0], enriched_vectors[w1])
         if dist > config.gamma:
+
+            # Compute the partial gradient of the distance with respect to w0
             gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k2
             if w1 in gradient_updates:
@@ -261,6 +223,19 @@ def _sgd_step_syn(synonym_pairs: list, enriched_vectors: dict, config: SettingCo
 
 def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
                   update_count: dict) -> (dict, dict):
+    """
+    Performs a single stochastic gradient descent step for synonym pairs.
+    :param vsp_pairs: Dictionary of {(w1, w2): distance} containing pre-computed VSP pairs.
+    :param enriched_vectors: The enriched vectors currently under computation
+    :param config: Configuration of the experiment run
+    :param gradient_updates: Dictionary of gradient updates. Keys are words and values are the so far
+    accumulated partial gradients of other vectors with respect the key.
+    :param update_count: Dictionary of counts of gradient updates. Keys are words and values are the number
+    of times another vector's gradient with respect to the key was calculated and accumulated in gradient_updates.
+    :return: The gradient updates and update counts but updated.
+    """
+
+    # Optimization for searching since in sets it's O(1)
     vocab = set(config.vocabulary)
     for (w0, w1) in vsp_pairs:
         # Extra check for reduced vocabulary:
@@ -271,6 +246,8 @@ def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig
         new_distance = to.distance(enriched_vectors[w0], enriched_vectors[w1])
 
         if original_distance <= new_distance:
+
+            # Compute the partial gradient of the distance with respect to w0
             gradient = to.partial_gradient(enriched_vectors[w0], enriched_vectors[w1])
             gradient *= config.hyper_k3
 
@@ -311,19 +288,17 @@ def sgd_step(vectors: dict, synonym_pairs: list, antonym_pairs: list, vsp_pairs:
 
 
 def counterfit(config: SettingConfig) -> dict:
+    """
+    Driver function for the counterfitting algorithm.
+    :param config: Configuration of the experiment run.
+    :return: The enhanced word vectors.
+    """
     word_vectors = config.vectors
-    vocabulary = config.vocabulary
     antonyms = config.antonyms
     synonyms = config.synonyms
+    vsp_pairs = config.vsp_pairs
 
     current_iteration = 0
-    vsp_pairs = {}
-
-    # Only compute the VSP Pairs step if listed in the config mode and the weight of the vsp pairs is different than 0
-    if 'vsp' in config.mode and config.hyper_k3 > 0.0:  # if we need to compute the VSP terms.
-        # TODO: Load existing VSP pairs if exist to avoid computationally heavy operation in the future
-        vsp_pairs = compute_vsp_pairs(word_vectors, vocabulary, config)
-
     # Post-processing: remove synonym pairs which are deemed to be both synonyms and antonyms:
     for antonym_pair in antonyms:
         if antonym_pair in synonyms:
@@ -343,9 +318,15 @@ def counterfit(config: SettingConfig) -> dict:
     return word_vectors
 
 
-def run_experiment(config_path):
-    print(f"Started counterfitting run @ {datetime.now()}")
-    config = SettingConfig(config_path)
+def run_experiment(config_path: str, language_model_name: str) -> None:
+    """
+    Wrapper for the counterfitting algorithm including vector storing and result comparison.
+    :param config_path: Path to the configuration file
+    :param language_model_name: Unique idenfitier for the language
+    :return:
+    """
+    print(f"Started counterfitting run at {to.get_time()}")
+    config = SettingConfig(config_path, language_model_name)
     if not config.vectors:
         print("Unable to load vectors. Aborting.")
         return
@@ -360,14 +341,30 @@ def run_experiment(config_path):
     config.comparator.compare()
 
 
+def init_argument_parser() -> argparse.ArgumentParser:
+    """
+    Initailizes the argument parser for command line usage.
+    :return: An ArgumentParser objects that knows how to parse specific parameters.
+    """
+    parser = argparse.ArgumentParser(description='Counterfitting to linguistic constraints')
+    parser.add_argument('-c', '--config_filepath',
+                        action='store', nargs='?', type=str)
+    parser.add_argument('-l', '--language_model_name',
+                        action='store', nargs='?', type=str)
+
+    return parser
+
+
 def main():
-    try:
-        config_filepath = sys.argv[1]
-    except IndexError:
-        print("\nUsing the default config file: parameters.cfg")
+    arg_parser = init_argument_parser()
+    arguments = arg_parser.parse_args()
+
+    config_filepath = arguments.config_filepath
+    if not config_filepath:
         config_filepath = "parameters.cfg"
 
-    run_experiment(config_filepath)
+    language_model_name = arguments.language_model_name
+    run_experiment(config_filepath, language_model_name)
 
 
 if __name__ == "__main__":
