@@ -1,15 +1,13 @@
 import configparser
 import errno
-import io
 import os
 import sys
 from datetime import datetime
 
 import rowordnet as rwn
 
-from util.semantic_augmenter import augment_antonym_verbs, augment_synonym_verbs
-from util.tools import unique, remove_phrases, process_pair, get_cross_synset_pairs, get_synset_pairs, \
-    append_constraints_to_file
+from util.tools import unique, process_pair, get_cross_synset_pairs, get_synset_pairs, \
+    save_pairs_to_file
 
 
 class SettingConfig:
@@ -52,6 +50,12 @@ class SettingConfig:
 
 
 def postprocess_pairs(raw_pairs: list, config: SettingConfig) -> list:
+    """
+    Processes a list of pairs to remove reflexive forms, pairs with duplicate elements, proper nouns, etc.
+    :param raw_pairs: List of tuples representing the initial pairs.
+    :param config: Configuration of the current run.
+    :return: The filtered list of pairs from the initial pairs.
+    """
     processed_pairs = list()
 
     for raw_pair in raw_pairs:
@@ -70,7 +74,16 @@ def postprocess_pairs(raw_pairs: list, config: SettingConfig) -> list:
     return unique(processed_pairs)
 
 
-def write_pairs(pairs: list, root_path: str, pos: str, name: str) -> str:
+def write_pairs(pairs: list, root_path: str, pos: str, constraint_type: str) -> None:
+    """
+    Computes the location where the pairs should be stored based on their PoS and constraint type and writes them there.
+    :param pairs: Linguistic constraints, as pairs.
+    :param root_path: Root to the location where constraint files are saved.
+    :param pos: Part of speech.
+    :param constraint_type: Category of constraints. Synonym or antonym are accepted values, but feel free to use
+    whatever fits.
+    :return: None.
+    """
     print(f"Writing {pos} pairs to file")
     dir_path = os.path.join(root_path, pos)
 
@@ -80,18 +93,18 @@ def write_pairs(pairs: list, root_path: str, pos: str, name: str) -> str:
         if e.errno != errno.EEXIST:
             raise
 
-    constraints_path = os.path.join(dir_path, name + ".txt")
+    constraints_path = os.path.join(dir_path, constraint_type + ".txt")
 
-    with io.open(file=constraints_path, mode="w", encoding='utf-8') as out:
-        # Write each pair to the file
-        for pair in pairs:
-            out.write(f"{pair[0]} {pair[1]}\n")
-        out.close()
-
-    return constraints_path
+    save_pairs_to_file(pairs, constraints_path)
 
 
-def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
+def generate_antonym_pairs(config: SettingConfig) -> dict:
+    """
+    Generates antonym pairs from RoWordNet.
+    :param config: Configuration of the current run.
+    :return: A dictionary where keys are strings representing parts of speech and values are lists of pairs
+    corresponding to synonyms / antonyms from that category.
+    """
     print(f"Generating initial antonym pairs from RoWordNet @ {datetime.now()}")
     wn = rwn.RoWordNet()
 
@@ -116,9 +129,6 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
             # Get the outbound relations of type antonym from
             outbound_relations = filter(lambda x: x[1] == 'near_antonym', wn.outbound_relations(synset_id))
 
-            # Get the literals
-            current_literals = remove_phrases(synset.literals)
-
             # Iterate outbound relations
             for relation in outbound_relations:
                 # Get the synset corresponding to the target of the outbound relation
@@ -140,8 +150,13 @@ def generate_raw_antonym_pairs(config: SettingConfig) -> dict:
     return pairs
 
 
-def generate_raw_synonym_pairs(config: SettingConfig) -> dict:
-    print(f"Generating initial synonym pairs from RoWordNet @ {datetime.now()}")
+def generate_synonym_pairs(config: SettingConfig) -> dict:
+    """
+    Generates synonym pairs from RoWordNet.
+    :param config: Configuration of the current run.
+    :return: A dictionary where keys are strings representing parts of speech and values are lists of pairs
+    corresponding to synonyms / antonyms from that category.
+    """
     wn = rwn.RoWordNet()
 
     # Create the output dictionary that will be of type dict(str : set(pair(str, str)) where the key is
@@ -172,38 +187,31 @@ def generate_raw_synonym_pairs(config: SettingConfig) -> dict:
             if value == part_of_speech:
                 pairs[key] = unique(pos_pairs)
 
-    print(f"Successfully generated synonym pairs {datetime.now()}")
     return pairs
 
 
 def antonyms_pipeline(config: SettingConfig) -> None:
-    # raw_synonym_pairs : dict(str, set(pair(str, str))
-    raw_antonym_pairs = generate_raw_antonym_pairs(config)
+    """
+    Synonyms generation pipeline driver function.
+    :param config: Configuration of the current run.
+    :return: None
+    """
+    raw_antonym_pairs = generate_antonym_pairs(config)
     for pos in config.pos.keys():
         processed_synonym_pairs = postprocess_pairs(raw_antonym_pairs[pos], config)
         write_pairs(processed_synonym_pairs, config.constraints_root_path, pos, "antonyms")
 
-        # Perform the additional step of writing augmented pairs in case of verbs
-        if pos == 'verb':
-            print('Generating and adding augmented verb synonyms')
-            augmented_verb_pairs = augment_synonym_verbs()
-            append_constraints_to_file(augmented_verb_pairs,
-                                       os.path.join(config.constraints_root_path, "verb", "antonyms.txt"))
-
 
 def synonyms_pipeline(config: SettingConfig) -> None:
-    # raw_synonym_pairs : dict(str, set(pair(str, str))
-    raw_synonym_pairs = generate_raw_synonym_pairs(config)
+    """
+    Synonym generation pipeline driver function.
+    :param config: Configuration of the current run.
+    :return: None
+    """
+    raw_synonym_pairs = generate_synonym_pairs(config)
     for pos in config.pos.keys():
         processed_synonym_pairs = postprocess_pairs(raw_synonym_pairs[pos], config)
         write_pairs(processed_synonym_pairs, config.constraints_root_path, pos, "synonyms")
-
-        # Perform the additional step of writing augmented pairs in case of verbs
-        if pos == 'verb':
-            print('Generating and adding augmented verb antonyms')
-            augmented_verb_pairs = augment_antonym_verbs()
-            append_constraints_to_file(augmented_verb_pairs,
-                                       os.path.join(config.constraints_root_path, "verb", "synonyms.txt"))
 
 
 def main():

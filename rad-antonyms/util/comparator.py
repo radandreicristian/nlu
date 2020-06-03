@@ -1,35 +1,16 @@
 import configparser
-import io
 import os
 import pathlib
-from typing import Optional, TextIO
 
-import numpy as np
+import pandas as pd
 
 from util import tools
 
 
-def compare_embeddings(path1, path2):
-
-    # Load first vecs:
-    print("Loading first vectors...")
-    words1 = tools.load_vectors_novocab(path1)
-    print("Loaded first vectors.")
-
-    print("Loading second vectors...")
-    words2 = tools.load_vectors_novocab(path2)
-    print("Loaded second vectors.")
-
-    count = 0
-    for key in words1.keys():
-        if not np.array_equal(words1[key], words2[key]):
-            print(f"different embeddings for {key}")
-            count += 1
-
-    print(f"Different vectors : {count} / {len(words1)}")
-
-
 class Comparator:
+    """
+    Class that performs the comparation between two sets of vectors: the original and the counterfit version.
+    """
 
     def __init__(self, config_path: str, original_vectors: dict, counterfit_vectors: dict, **kwargs):
 
@@ -66,10 +47,14 @@ class Comparator:
         # Set epsilon, the minimum distance difference between similarities of an origina/counterfit pair
         # to be considered valid
         self.epsilon = self.config.get("hyperparameters", "epsilon")
-        self.output_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "lang",
-                                        "counterfitting_reports",
-                                        str("".join(self.counterfit_vectors_path).split("/")[-1].rsplit(".", 1)[
-                                                0]) + ".txt")
+        self.syn_output_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "lang",
+                                            "counterfitting_reports",
+                                            str("".join(self.counterfit_vectors_path).split("/")[-1].rsplit(".", 1)[
+                                                    0]) + "_syn.csv")
+        self.ant_output_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "lang",
+                                            "counterfitting_reports",
+                                            str("".join(self.counterfit_vectors_path).split("/")[-1].rsplit(".", 1)[
+                                                    0]) + "_ant.csv")
 
     def compare(self):
         # Load original and counterfit vectors
@@ -86,52 +71,51 @@ class Comparator:
             print("Loaded counterfit vectors from parameter")
             cf_vecs = self.counterfit_vectors
 
-        with io.open(file=self.output_path, mode="w", encoding="utf-8") as output_file:
-            # Write the kwargs as the counterfit run oiptions
-            output_file.write("Counterfitting Run Options\n")
-            for k, v in self.args.items():
-                key = k.replace("'", '')
-                value = str(v).replace("'", '').replace("]", "").replace("[", "")
-                output_file.write(f"{key} : {value}\n")
-            output_file.write("\n\n I. Antonyms Results \n\n")
+        syn_cos_similarities_first_term = list()
+        syn_cos_similarities_second_term = list()
+        syn_original_cos_similarities = list()
+        syn_counterfit_cosine_similarities = list()
 
-            # Write the report regarding the antonym pairs in the dataset
-            self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_antonyms)
+        ant_cos_similarities_first_term = list()
+        ant_cos_similarities_second_term = list()
+        ant_original_cos_similarities = list()
+        ant_counterfit_cosine_similarities = list()
 
-            output_file.write("\n\n II. Syonyms Results \n\n")
-            # In the same file,w rite the report regarding the synonym pairs in the dataset
-            self.compare_counterfit_pairs(og_vecs, cf_vecs, output_file, self.dataset_synonyms)
-            output_file.close()
+        for syn_pair in self.dataset_synonyms:
+            w0 = syn_pair[0]
+            w1 = syn_pair[1]
+            syn_cos_similarities_first_term.append(tools.cos_sim(og_vecs[w0], cf_vecs[w0]))
+            syn_cos_similarities_second_term.append(tools.cos_sim(og_vecs[w1], cf_vecs[w1]))
+            syn_original_cos_similarities.append(tools.cos_sim(og_vecs[w0], og_vecs[w1]))
+            syn_counterfit_cosine_similarities.append(tools.cos_sim(cf_vecs[w0], cf_vecs[w1]))
 
-    def compare_counterfit_pairs(self, original_vectors: dict, counterfit_vectors: dict, output_file: TextIO,
-                                 pairs: list) -> None:
-        valid_pairs = []
-        for (w1, w2) in pairs:
-            valid = self.report_pair(w1, w2, original_vectors, counterfit_vectors, output_file)
-            if valid:
-                valid_pairs.append(valid)
-        output_file.write(f"\n Counterfit pairs with significant increase ( distance diff. > {self.epsilon})"
-                          f"\n Count: {len(valid_pairs)} / {len(self.dataset_antonyms)} "
-                          f" ({len(valid_pairs) / len(self.dataset_antonyms) * 100}%)")
-        for pair in valid_pairs:
-            output_file.write(f"\t{pair[0], pair[1]}".replace("'", "").replace(']', '').replace('[', ''))
+        for ant_pair in self.dataset_antonyms:
+            w0 = ant_pair[0]
+            w1 = ant_pair[1]
+            ant_cos_similarities_first_term.append(tools.cos_sim(og_vecs[w0], cf_vecs[w0]))
+            ant_cos_similarities_second_term.append(tools.cos_sim(og_vecs[w1], cf_vecs[w1]))
+            ant_original_cos_similarities.append(tools.cos_sim(og_vecs[w0], og_vecs[w1]))
+            ant_counterfit_cosine_similarities.append(tools.cos_sim(cf_vecs[w0], cf_vecs[w1]))
 
-    def report_pair(self, w1: str, w2: str, og_vecs: dict, cf_vecs: dict, output_file: TextIO) -> Optional[tuple]:
-        # Compute and write the pair stats to file
-        stats = self.compute_pair_stats(w1, w2, og_vecs, cf_vecs)
-        output_file.write(stats)
+        pretty_dataset_synonyms = list(map(lambda x: " ".join(x).replace(',', "").replace(")", "").replace("(", ""),
+                                           self.dataset_synonyms))
+        pretty_dataset_antonyms = list(map(lambda x: " ".join(x).replace(',', "").replace(")", "").replace("(", ""),
+                                           self.dataset_antonyms))
 
-        # Return the pair if the abs of the difference of cos similarities between original and counterfit
-        # vectors is greater than epsilon
-        return (w1, w2) if abs(
-            float(tools.cos_sim(og_vecs[w1], og_vecs[w2]) - tools.cos_sim(cf_vecs[w1], cf_vecs[w2]))) > float(
-            self.epsilon) else None
+        syn_data = {'Synonym Pairs': pretty_dataset_synonyms,
+                    'W1 OG / CF sim.': syn_cos_similarities_first_term,
+                    'W2 OG / CF sim.': syn_cos_similarities_second_term,
+                    'Original pair sim.': syn_original_cos_similarities,
+                    'Counterfit pair sim.': syn_counterfit_cosine_similarities}
 
-    @staticmethod
-    def compute_pair_stats(w1: str, w2: str, og_vecs: dict, cf_vecs: dict) -> str:
-        # Simply return a formatted string containing the full report of a pair of words
-        return (f"Similarity report for {w1}, {w2}:\n"
-                f"\tCos between original/counterfit {w1}: {tools.cos_sim(og_vecs[w1], cf_vecs[w1])}\n"
-                f"\tCos between original/counterfit {w2}: {tools.cos_sim(og_vecs[w2], cf_vecs[w2])}\n"
-                f"\tOriginal cos for {w1}/{w2}: {tools.cos_sim(og_vecs[w1], og_vecs[w2])}\n"
-                f"\tCounterfit cos for {w1}/{w2}: {tools.cos_sim(cf_vecs[w1], cf_vecs[w2])}\n\n")
+        ant_data = {'Synonym Pairs': pretty_dataset_antonyms,
+                    'W1 OG / CF sim.': ant_cos_similarities_first_term,
+                    'W2 OG / CF sim.': ant_cos_similarities_second_term,
+                    'Original pair sim.': ant_original_cos_similarities,
+                    'Counterfit pair sim.': ant_counterfit_cosine_similarities}
+
+        syn_df = pd.DataFrame(syn_data)
+        ant_df = pd.DataFrame(ant_data)
+
+        syn_df.to_csv(self.syn_output_path, encoding="utf-8")
+        ant_df.to_csv(self.ant_output_path, encoding="utf-8")

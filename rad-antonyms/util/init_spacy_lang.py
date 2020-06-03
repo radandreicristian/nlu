@@ -6,16 +6,28 @@ import sys
 
 
 def is_venv():
+    """
+    :return: True if the script is ran inside a VENV, Flase otherwise.
+    """
     return hasattr(sys, 'real_prefix') or sys.base_prefix != sys.prefix
 
 
 def reactivate_venv(root_path: str) -> None:
+    """
+    Re-activates the virtual environment.
+    :param root_path: Root path of the project.
+    :return: None
+    """
     activate_abs_path = os.path.join(pathlib.Path(root_path).absolute(), "venv", "Scripts")
     os.chdir(activate_abs_path)
     subprocess.Popen(["activate.bat"])
 
 
 def init_argument_parser() -> argparse.ArgumentParser:
+    """
+    Initailizes the argument parser for command line usage.
+    :return: An ArgumentParser objects that knows how to parse specific parameters.
+    """
     parser = argparse.ArgumentParser(description='Automated SpaCy language model creation')
 
     # Language - ISO code of the language
@@ -55,14 +67,23 @@ def init_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def init_language_model(executable: str, language_code: str, model_path: str, vectors_path: str,
+def init_language_model(executable_path: str, language_code: str, model_path: str, vectors_path: str,
                         force_overwrite: bool) -> None:
-    model_initialization_command = [executable, '-m', 'spacy', 'init-model', language_code, model_path, '-v',
+    """
+    Performs the spacy init step.
+    :param executable_path: Path to the python executable.
+    :param language_code: ISO code of the language.
+    :param model_path: Path to where the model should be created. Personal recomandation: {project_root}/models
+    :param vectors_path: Path to where the vectors are stored. Supposedly {project_root}/lang/vectors/*.vec
+    :param force_overwrite: True if the user is okay with overwriting existing models.
+    :return: None
+    """
+    model_initialization_command = [executable_path, '-m', 'spacy', 'init-model', language_code, model_path, '-v',
                                     vectors_path]
 
     if not os.path.isdir(model_path):
         print("Model directory does not exist. Creating.")
-        os.mkdir(model_path)
+        pathlib.Path(model_path).mkdir(parents=True, exist_ok=True)
 
     if len(os.listdir(model_path)) > 0 and not force_overwrite:
         answer = input("Model path not empty. Contents may be overwritten. Proceed? (y/n)\n")
@@ -82,15 +103,25 @@ def init_language_model(executable: str, language_code: str, model_path: str, ve
         raise
 
 
-def package_language_model(executable: str, model_path: str, model_output_path: str, force_overwrite: bool) -> None:
-    model_packaging_command = [executable, '-m', 'spacy', 'package', model_path, model_output_path]
+def package_language_model(executable_path: str, model_path: str, model_output_path: str,
+                           force_overwrite: bool) -> None:
+    """
+    Performs spacy package step.
+    :param executable_path: Path to the python executable.
+    :param model_path: Path to where the model should be created. Personal recommendation: {project_root}/models
+    :param model_output_path: Path to where the packaged model shoudl be saved. Persona recommendation
+        {project_root}/models/out
+    :param force_overwrite: True if the user is okay with overwriting existing models.
+    :return:
+    """
+    model_packaging_command = [executable_path, '-m', 'spacy', 'package', model_path, model_output_path]
 
     if force_overwrite:
         model_packaging_command.append("--force")
 
     if not os.path.isdir(model_output_path):
         print("Model output directory does not exist. Creating.")
-        os.mkdir(model_output_path)
+        pathlib.Path(model_output_path).mkdir(parents=True, exist_ok=True)
 
     if len(os.listdir(model_output_path)) > 0 and not force_overwrite:
         answer = input("Model output path not empty. Contents may be overwritten. Proceed? (y/n)\n")
@@ -110,9 +141,15 @@ def package_language_model(executable: str, model_path: str, model_output_path: 
         raise
 
 
-def setup_language_model(executable: str, setup_script_path: str) -> None:
+def setup_language_model(executable_path: str, setup_script_path: str) -> None:
+    """
+    Performs spacy setup setp.
+    :param executable_path: Path to the python executable.
+    :param setup_script_path: Path to the setup script.
+    :return: None
+    """
     os.chdir(setup_script_path)
-    model_setup_command = [executable, 'setup.py', 'sdist']
+    model_setup_command = [executable_path, 'setup.py', 'sdist']
     try:
         subprocess.Popen(model_setup_command).wait()
     except OSError or IOError:
@@ -121,6 +158,13 @@ def setup_language_model(executable: str, setup_script_path: str) -> None:
 
 
 def install_language_model(setup_script_path: str, language_model_identifier: str) -> None:
+    """
+    Pefroms spacy language installation via PIP.
+    :param setup_script_path: Path to the setup script.
+    :param language_model_identifier: Identifier for the langauge model
+        (usually [isocode]-[version.subversion.subsubverison].
+    :return: None
+    """
     distribution_path = os.path.join(setup_script_path, 'dist')
     os.chdir(distribution_path)
     installation_command = ['pip', 'install', f"{language_model_identifier}.tar.gz"]
@@ -131,8 +175,17 @@ def install_language_model(setup_script_path: str, language_model_identifier: st
         raise
 
 
-def link_language_model(executable: str, root_path: str, generated_model_path, language_name) -> None:
-    linking_command = [executable, '-m', 'spacy', 'link', generated_model_path, language_name]
+def link_language_model(executable_path: str, root_path: str, generated_model_path, language_name) -> None:
+    """
+    Peforms spacy language linking.
+    IMPORTANT: THE EXECUTING TERMINAL / CONSOLE / SHELL SHOULD HAVE ADMIN PERMISSION FOR OS LINKING
+    :param executable_path: Path of the python executable.
+    :param root_path: Root path of the project.
+    :param generated_model_path: Path to the generated model.
+    :param language_name: Language unique identifier.
+    :return:
+    """
+    linking_command = [executable_path, '-m', 'spacy', 'link', generated_model_path, language_name]
     try:
         # Re-activate the venv?
         reactivate_venv(root_path)
@@ -200,7 +253,6 @@ def main():
     # Set absolute path to the root of this project
     file_path = pathlib.Path(__file__).parent.absolute()
     root_path = pathlib.Path(file_path).parent.absolute()
-    print(f"Root path: {root_path}")
 
     arguments = arg_parser.parse_args()
 

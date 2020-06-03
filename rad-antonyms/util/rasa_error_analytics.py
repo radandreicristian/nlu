@@ -68,16 +68,18 @@ def analyze_antonyms(dump_path: str) -> None:
         for k, v in scenario.items():
             scenario[k] = int(v / 5)
 
-    print(antonym_errors)
+    for _scenario in antonym_errors:
+        for k, v in _scenario.items():
+            print(f"{k} {v}\n")
 
 
 def analyze_any(dump_path: str) -> None:
     # TODO
     errors = []
     with io.open(file=dump_path, mode="r", encoding="utf-8") as input_file:
-
         input_file.close()
 
 
 if __name__ == '__main__':
-    analyze_antonyms("C:/Uni/Thesis/intent_errors_merged.txt")
+    analyze_antonyms(
+        "C:\\Uni\\Thesis\\radandreicristian\\nlu\\rad-antonyms\\results\\analysis_archives\\best_base_full_pipeline_v2_ht4\\results\\merged_reports\\intent_errors_merged.txt")

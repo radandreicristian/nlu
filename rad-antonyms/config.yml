@@ -1,0 +1,8 @@
+language: ro_ft_300_og_all
+pipeline: pretrained_embeddings_spacy
+policies:
+- name: MemoizationPolicy
+- epochs: 100
+  max_history: 5
+  name: TEDPolicy
+- name: MappingPolicy
