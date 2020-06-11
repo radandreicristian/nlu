@@ -61,7 +61,7 @@ class SettingConfig:
         self.synonyms = to.load_multiple_constraints(synonym_paths)
         self.antonyms = to.load_multiple_constraints(antonym_paths)
 
-        vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
+        vsp_path = self.config.get("paths", "VSP_PAIRS_PATH")
 
         self.vsp_pairs = to.load_vsp_pairs(vsp_path)
 

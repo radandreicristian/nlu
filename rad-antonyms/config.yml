@@ -1,4 +1,4 @@
-language: ro_ft_300_og
+language: ro_ft_300_og_all
 pipeline: pretrained_embeddings_spacy
 policies:
 - name: MemoizationPolicy

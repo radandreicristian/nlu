@@ -11,7 +11,7 @@ import time
 from shutil import copyfile
 from shutil import rmtree
 from statistics import stdev, mean
-from typing import Optional
+from typing import Optional, Any
 from zipfile import ZipFile
 
 import gspread
@@ -82,6 +82,19 @@ class SettingConfig:
         self.identifier = f"{self.language}_{'diac' if self.diacritics else 'nodiac'}"
         self.base_language_model = self.config.get("settings", "BASE_LANGAUGE")
         self.language_code = self.config.get("settings", "LANGUAGE_CODE")
+        self.spreadsheet_name = self.config.get("settings", "GOOGLE_SPREADSHEET_NAME")
+
+
+def update_spacy_language(config: SettingConfig, language: str):
+    with io.open(file=config.rasa_config_absolute_path, mode="r", encoding="utf-8") as rasa_config_file:
+        rasa_config = yaml.load(rasa_config_file, Loader=yaml.FullLoader)
+        rasa_config_file.close()
+
+    rasa_config['language'] = language
+
+    with io.open(file=config.rasa_config_absolute_path, mode="w", encoding="utf-8") as rasa_config_file:
+        yaml.dump(rasa_config, rasa_config_file)
+        rasa_config_file.close()
 
 
 def create_single_split(base_path: str, split_identifier: int, sample_percent: float, train: bool) -> None:
@@ -247,7 +260,7 @@ def process_intent_result(identifier: str, scenario_report_path: str, config: Se
                     # Copy all the intent errors in a human-readable form to the merged errors report
                     for entry in content:
                         output_file.write(
-                            f"\n\t Predicted: {entry['intent_prediction']['name']}. Actual: {entry['intent']}. "
+                            f"\n\tPredicted: {entry['intent_prediction']['name']}. Actual: {entry['intent']}. "
                             f"Text: {entry['text']}. "
                             f"Conf: {entry['intent_prediction']['confidence']}".replace('\"', ""))
                     output_file.close()
@@ -308,7 +321,7 @@ def process_slot_result(identifier: str, scenario_report_path: str, config: Sett
                     output_file.write(f"\nErrors report for {identifier}")
                     for entry in content:
                         output_file.write(
-                            f"\n\t    Predicted: {[(e['entity'], e['value']) for e in entry['predicted_entities']]}. "
+                            f"\n\tPredicted: {[(e['entity'], e['value']) for e in entry['predicted_entities']]}. "
                             f"Actual: {[(e['entity'], e['value']) for e in entry['entities']]}. "
                             f"Text: {entry['text']}".replace("[", "").replace(")]", "").replace("(", "").replace("',",
                                                                                                                  ": ").replace(
@@ -349,13 +362,14 @@ def copy_confusion_matrix(identifier: str, config: SettingConfig) -> None:
                           identifier.replace(" ", "").replace(",", "").replace("_", "") + ".png"))
 
 
-def process_split(file: str, file_path: str, split_id: str, config: SettingConfig, scenario_reports_path: str,
-                  scenario_slot_results: list, scenario_intent_results: list) -> None:
+def process_split_counterfitting(file: str, file_path: str, split_id: int, config: SettingConfig,
+                                 scenario_reports_path: str,
+                                 scenario_slot_results: list, scenario_intent_results: list) -> None:
     """
     Peforms a full pipeline run for a singple split. This includes extracting verbs, and modes, augmenting,
     counterfitting, spacy model pipeline,  training and evaluation.
     :param file: The identifier of the scenario (i.e. "scenario_0")
-    :param file_path: Path to the scenario rooth.
+    :param file_path: Path to the scenario root.
     :param split_id: Id of the split.
     :param config: Configuration of the current run.
     :param scenario_reports_path: Path of the reports for the current scenario.
@@ -430,12 +444,7 @@ def process_split(file: str, file_path: str, split_id: str, config: SettingConfi
     os.chdir(root_path)
 
     print(f"Updating RASA config language model at {get_time()}")
-    with io.open(file=config.rasa_config_absolute_path, mode="r+", encoding="utf-8") as rasa_config_file:
-        rasa_config = yaml.load(rasa_config_file, Loader=yaml.FullLoader)
-        rasa_config['language'] = language_model_name
-        rasa_config_file.truncate(0)
-        yaml.dump(rasa_config, rasa_config_file)
-    rasa_config_file.close()
+    update_spacy_language(config, language_model_name)
 
     # Run the subprocess for RASA training and testing, and wait for its completion
     print(f"Running RASA training and testing at {get_time()}")
@@ -459,23 +468,60 @@ def process_split(file: str, file_path: str, split_id: str, config: SettingConfi
     copy_path(backup_verb_synonyms_path, verb_synonyms_path, False)
     copy_path(backup_verb_antonyms_path, verb_antonyms_path, False)
 
-    # Remove models to save a lot of memory.
-    shutil.rmtree(model_path)
-    shutil.rmtree(model_out_path)
-
     # Put the default value back in the rasa config
-    with io.open(file=config.rasa_config_absolute_path, mode="r+", encoding="utf-8") as rasa_config_file:
-        rasa_config = yaml.load(rasa_config_file, Loader=yaml.FullLoader)
-        rasa_config['language'] = config.base_language_model
-        rasa_config_file.truncate(0)
-        yaml.dump(rasa_config, rasa_config_file)
-    rasa_config_file.close()
+    update_spacy_language(config, config.base_language_model)
+
+    # Remove models and vectors, since they will never be used again, in order to save a lot of memory.
+    # Avoiding some weird race condition :/
+    time.sleep(2)
+    shutil.rmtree(model_path)
+
+    time.sleep(2)
+    shutil.rmtree(model_out_path)
+    os.remove(os.path.join(root_path, vectors_path))
 
     print(f"Finished restoring backup files and deleting language model at {get_time()}")
     print(f"Finished processing split {identifier}")
 
 
-def process_datasets(config: SettingConfig, sheet: Worksheet) -> None:
+def process_split(file: str, file_path: str, split_id: int, config: SettingConfig, scenario_reports_path: str,
+                  scenario_slot_results: list, scenario_intent_results: list) -> None:
+    """
+        Peforms a full pipeline run for a singple split. This does not include extracting verbs and modes, augmenting,
+        counterfitting, spacy model pipeline, just training and evaluation.
+        :param file: The identifier of the scenario (i.e. "scenario_0")
+        :param file_path: Path to the scenario root.
+        :param split_id: Id of the split.
+        :param config: Configuration of the current run.
+        :param scenario_reports_path: Path of the reports for the current scenario.
+        :param scenario_slot_results: Slot labeling results for the current scenario.
+        :param scenario_intent_results: Intent classification results for the current scenario.
+        :return: None
+        """
+    # Compute the identifier, get the train split and test split
+    identifier = f" {file}, split {split_id}"
+    train_split = f"{file_path}_train_{split_id}.json"
+    test_split = f"{file_path}_test_{split_id}.json"
+
+    # Run the subprocess for RASA training and testing, and wait for its completion
+    print(f"Running RASA training and testing at {get_time()}")
+    command = [config.rasa_script_path, train_split, test_split]
+    print(command)
+    subprocess.Popen(command, shell=True).wait()
+
+    # Process the slot and intent errors & reports and save their return values
+    print(f"Computing and writing results at {get_time()}")
+    intent_f1 = process_intent_result(identifier, scenario_reports_path, config)
+    slot_f1 = process_slot_result(identifier, scenario_reports_path, config)
+
+    # Move the confusion matrix to the results path
+    copy_confusion_matrix(identifier, config)
+
+    scenario_slot_results.append(float("{:0.4f}".format(slot_f1)))
+    scenario_intent_results.append(float("{:0.4f}".format(intent_f1)))
+
+
+def process_datasets(config: SettingConfig, should_counterfit: bool = True) -> None:
     """
     Processes a dataset with multiple splits, generating reports and results.
     :param config: Configuration of the current run.
@@ -486,7 +532,7 @@ def process_datasets(config: SettingConfig, sheet: Worksheet) -> None:
 
     # Compute and write the title of the spreadsheet based on the loaded configurations
     spreadsheet_title = [config.identifier]
-    sheet.insert_row(spreadsheet_title, 1)
+    insert_row_authorized(config, spreadsheet_title, 1)
 
     # For each scenario folder
     spreadsheet_row_index = SPREADSHEET_START_VERTICAL_OFFSET
@@ -519,9 +565,15 @@ def process_datasets(config: SettingConfig, sheet: Worksheet) -> None:
             scenario_intent_results = [f'Intent - {file}']
 
             for split_id in range(config.splits):
-                process_split(file, file_path, split_id, config, scenario_reports_path, scenario_slot_results,
-                              scenario_intent_results)
-
+                # TODO: This should be a try-except + rollback
+                if should_counterfit:
+                    process_split_counterfitting(file, file_path, split_id, config, scenario_reports_path,
+                                                 scenario_slot_results,
+                                                 scenario_intent_results)
+                else:
+                    process_split(file, file_path, split_id, config, scenario_reports_path,
+                                  scenario_slot_results,
+                                  scenario_intent_results)
             # Append the mean value to each list for the scenario
             scenario_intent_results.append(float("{:0.4f}".format(mean(scenario_intent_results[1:]))))
             scenario_slot_results.append(float("{:0.4f}".format(mean(scenario_slot_results[1:]))))
@@ -533,23 +585,30 @@ def process_datasets(config: SettingConfig, sheet: Worksheet) -> None:
                 float("{:0.3f}".format(stdev(scenario_slot_results[1:len(scenario_slot_results) - 2]))))
 
             # Append the line in the google doc:
-            sheet.insert_row(scenario_slot_results, spreadsheet_row_index)
-            sheet.insert_row(scenario_intent_results, spreadsheet_row_index)
+            # sheet.insert_row(scenario_slot_results, spreadsheet_row_index)
+            insert_row_authorized(config, scenario_slot_results, spreadsheet_row_index)
+            # sheet.insert_row(scenario_intent_results, spreadsheet_row_index)
+            insert_row_authorized(config, scenario_intent_results, spreadsheet_row_index)
             spreadsheet_row_index += 3
 
 
-def get_worksheet(name: str) -> Optional[Worksheet]:
+def insert_row_authorized(config: SettingConfig, values: Any, index: int = 1):
+    worksheet = _get_worksheet(config)
+    worksheet.insert_row(values, index)
+
+
+def _get_worksheet(config: SettingConfig) -> Optional[Worksheet]:
     """
     Creates the object associated to the first sheet in the provided Google Sheets spreadsheet.
     NOTE: This function always uses and overwrites the first sheet.
     TODO: Figure how to avoid this.
-    :param name: The name of the spreadsheet
+    :param config: The configuration of the current run.
     :return: Optionally, the Worksheet object associated, or None if it fails.
     """
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_name('thesis_secret.json', scope)
     client = gspread.authorize(credentials)
-    return client.open(name).sheet1
+    return client.open(config.spreadsheet_name).sheet1
 
 
 def create_analysis_archive(config: SettingConfig) -> None:
@@ -570,32 +629,43 @@ def create_analysis_archive(config: SettingConfig) -> None:
     zipObj.close()
 
 
-def rasa_pipeline(config_path: str, rasa_config_filepath: str) -> None:
+def rasa_pipeline_semantic(config_path: str) -> None:
     """
-    Driver function for the RASA NLU Pipeline. Performs all the steps from cleaning files from previous runs to
-    creating splits, processing them individually and reporting results.
-    :param config_path:
-    :param rasa_config_filepath:
-    :return:
+    Driver function for the RASA NLU Pipeline with counterfitting semantic augmentation.
+    Performs all the steps from cleaning files from previous runs to creating splits, processing them individually and
+    reporting results.
+    :param config_path: Path to configuration file.
+    :return: None
     """
     config = SettingConfig(config_path)
     wipe_reports(config)
     wipe_splits(config)
     create_splits(config)
-    worksheet = get_worksheet('Benchmark Counterfitting pe Diacritice')
-    process_datasets(config, worksheet, config_path, rasa_config_filepath)
+    process_datasets(config)
+    create_analysis_archive(config)
+
+
+def rasa_pipeline_baseline(config_path: str) -> None:
+    """
+    Driver function for RASA NLU base pipeline.
+    :param config_path: Path to configuration file.
+    :return: None
+    """
+    config = SettingConfig(config_path)
+    wipe_reports(config)
+    wipe_splits(config)
+    create_splits(config)
+    process_datasets(config, False)
     create_analysis_archive(config)
 
 
 def main():
     try:
         config_filepath = sys.argv[1]
-        rasa_config_filepath = sys.argv[2]
     except IndexError:
         print("\nUsing the default config files")
         config_filepath = "parameters.cfg"
-        rasa_config_filepath = "config.yml"
-    rasa_pipeline(config_filepath, rasa_config_filepath)
+    rasa_pipeline_semantic(config_filepath)
 
 
 if __name__ == "__main__":
