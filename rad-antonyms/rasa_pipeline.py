@@ -362,8 +362,9 @@ def copy_confusion_matrix(identifier: str, config: SettingConfig) -> None:
                           identifier.replace(" ", "").replace(",", "").replace("_", "") + ".png"))
 
 
-def process_split(file: str, file_path: str, split_id: int, config: SettingConfig, scenario_reports_path: str,
-                  scenario_slot_results: list, scenario_intent_results: list) -> None:
+def process_split_counterfitting(file: str, file_path: str, split_id: int, config: SettingConfig,
+                                 scenario_reports_path: str,
+                                 scenario_slot_results: list, scenario_intent_results: list) -> None:
     """
     Peforms a full pipeline run for a singple split. This includes extracting verbs, and modes, augmenting,
     counterfitting, spacy model pipeline,  training and evaluation.
@@ -483,7 +484,44 @@ def process_split(file: str, file_path: str, split_id: int, config: SettingConfi
     print(f"Finished processing split {identifier}")
 
 
-def process_datasets(config: SettingConfig) -> None:
+def process_split(file: str, file_path: str, split_id: int, config: SettingConfig, scenario_reports_path: str,
+                  scenario_slot_results: list, scenario_intent_results: list) -> None:
+    """
+        Peforms a full pipeline run for a singple split. This does not include extracting verbs and modes, augmenting,
+        counterfitting, spacy model pipeline, just training and evaluation.
+        :param file: The identifier of the scenario (i.e. "scenario_0")
+        :param file_path: Path to the scenario root.
+        :param split_id: Id of the split.
+        :param config: Configuration of the current run.
+        :param scenario_reports_path: Path of the reports for the current scenario.
+        :param scenario_slot_results: Slot labeling results for the current scenario.
+        :param scenario_intent_results: Intent classification results for the current scenario.
+        :return: None
+        """
+    # Compute the identifier, get the train split and test split
+    identifier = f" {file}, split {split_id}"
+    train_split = f"{file_path}_train_{split_id}.json"
+    test_split = f"{file_path}_test_{split_id}.json"
+
+    # Run the subprocess for RASA training and testing, and wait for its completion
+    print(f"Running RASA training and testing at {get_time()}")
+    command = [config.rasa_script_path, train_split, test_split]
+    print(command)
+    subprocess.Popen(command, shell=True).wait()
+
+    # Process the slot and intent errors & reports and save their return values
+    print(f"Computing and writing results at {get_time()}")
+    intent_f1 = process_intent_result(identifier, scenario_reports_path, config)
+    slot_f1 = process_slot_result(identifier, scenario_reports_path, config)
+
+    # Move the confusion matrix to the results path
+    copy_confusion_matrix(identifier, config)
+
+    scenario_slot_results.append(float("{:0.4f}".format(slot_f1)))
+    scenario_intent_results.append(float("{:0.4f}".format(intent_f1)))
+
+
+def process_datasets(config: SettingConfig, should_counterfit: bool = True) -> None:
     """
     Processes a dataset with multiple splits, generating reports and results.
     :param config: Configuration of the current run.
@@ -528,9 +566,14 @@ def process_datasets(config: SettingConfig) -> None:
 
             for split_id in range(config.splits):
                 # TODO: This should be a try-except + rollback
-                process_split(file, file_path, split_id, config, scenario_reports_path, scenario_slot_results,
-                              scenario_intent_results)
-
+                if should_counterfit:
+                    process_split_counterfitting(file, file_path, split_id, config, scenario_reports_path,
+                                                 scenario_slot_results,
+                                                 scenario_intent_results)
+                else:
+                    process_split(file, file_path, split_id, config, scenario_reports_path,
+                                  scenario_slot_results,
+                                  scenario_intent_results)
             # Append the mean value to each list for the scenario
             scenario_intent_results.append(float("{:0.4f}".format(mean(scenario_intent_results[1:]))))
             scenario_slot_results.append(float("{:0.4f}".format(mean(scenario_slot_results[1:]))))
@@ -586,11 +629,12 @@ def create_analysis_archive(config: SettingConfig) -> None:
     zipObj.close()
 
 
-def rasa_pipeline(config_path: str) -> None:
+def rasa_pipeline_semantic(config_path: str) -> None:
     """
-    Driver function for the RASA NLU Pipeline. Performs all the steps from cleaning files from previous runs to
-    creating splits, processing them individually and reporting results.
-    :param config_path:
+    Driver function for the RASA NLU Pipeline with counterfitting semantic augmentation.
+    Performs all the steps from cleaning files from previous runs to creating splits, processing them individually and
+    reporting results.
+    :param config_path: Path to configuration file.
     :return: None
     """
     config = SettingConfig(config_path)
@@ -601,13 +645,27 @@ def rasa_pipeline(config_path: str) -> None:
     create_analysis_archive(config)
 
 
+def rasa_pipeline_baseline(config_path: str) -> None:
+    """
+    Driver function for RASA NLU base pipeline.
+    :param config_path: Path to configuration file.
+    :return: None
+    """
+    config = SettingConfig(config_path)
+    wipe_reports(config)
+    wipe_splits(config)
+    create_splits(config)
+    process_datasets(config, False)
+    create_analysis_archive(config)
+
+
 def main():
     try:
         config_filepath = sys.argv[1]
     except IndexError:
         print("\nUsing the default config files")
         config_filepath = "parameters.cfg"
-    rasa_pipeline(config_filepath)
+    rasa_pipeline_semantic(config_filepath)
 
 
 if __name__ == "__main__":

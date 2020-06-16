@@ -1,4 +1,6 @@
-/datasets/
-/lang/counterfitting_reports/
 /models/
 /results/
+/lang/counterfitting_reports/
+/*/scenario_reports/
+**/scenario_reports/
+/util/local/

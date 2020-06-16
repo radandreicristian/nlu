@@ -54,29 +54,20 @@ class SettingConfig:
 
         print("Loading constraints...")
         # Append antonyms and synonyms of each selected PoS from their respective folder
+        for part_of_speech in self.parts_of_speech:
+            antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
+            synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
 
-        # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
-        mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
+        self.synonyms = to.load_multiple_constraints(synonym_paths)
+        self.antonyms = to.load_multiple_constraints(antonym_paths)
 
-        self.antonyms = []
-        self.synonyms = []
-        self.vsp_pairs = {}
+        vsp_path = self.config.get("paths", "VSP_PAIRS_PATH")
 
-        if 'ant' in mode:
-            for part_of_speech in self.parts_of_speech:
-                antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
-            self.antonyms = to.load_multiple_constraints(antonym_paths)
-
-        if 'syn' in mode:
-            for part_of_speech in self.parts_of_speech:
-                synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
-            self.synonyms = to.load_multiple_constraints(synonym_paths)
-
-        if 'vsp' in mode:
-            vsp_path = self.config.get("paths", "VSP_PAIRS_VERB_PATH")
-            self.vsp_pairs = to.load_vsp_pairs(vsp_path)
+        self.vsp_pairs = to.load_vsp_pairs(vsp_path)
 
         print("Loaded constraints.")
+        # Read and parse the mode (whether to include synonyms, antonyms or VSP pairs in the current run)
+        mode = self.config.get("settings", "MODE").replace("[", "").replace("]", "").replace(" ", "").split(",")
 
         vocab = list()
 
@@ -88,19 +79,16 @@ class SettingConfig:
         # Add augmented words from synonyms list to the vocab
         # Small optimization trick for O(1) lookup:
         vocab_set = set(vocab)
+        for pair in self.synonyms:
+            if pair[0] in vocab_set or pair[1] in vocab_set:
+                vocab.append(pair[0])
+                vocab.append(pair[1])
 
-        if 'syn' in mode:
-            for pair in self.synonyms:
-                if pair[0] in vocab_set or pair[1] in vocab_set:
-                    vocab.append(pair[0])
-                    vocab.append(pair[1])
-
-        if 'ant' in mode:
-            # Add augmented words from antonym lists to the vocab
-            for pair in self.antonyms:
-                if pair[0] in vocab_set or pair[1] in vocab_set:
-                    vocab.append(pair[0])
-                    vocab.append(pair[1])
+        # Add augmented words from antonym lists to the vocab
+        for pair in self.antonyms:
+            if pair[0] in vocab_set or pair[1] in vocab_set:
+                vocab.append(pair[0])
+                vocab.append(pair[1])
 
         vocab = to.unique(vocab)
         print("Loaded vocabulary.")
@@ -134,7 +122,6 @@ class SettingConfig:
         self.hyper_k1 = self.config.getfloat("hyperparameters", "hyper_k1")
         self.hyper_k2 = self.config.getfloat("hyperparameters", "hyper_k2")
         self.hyper_k3 = self.config.getfloat("hyperparameters", "hyper_k3")
-
         self.sgd_iters = self.config.getint("hyperparameters", "sgd_iters")
 
         self.delta = self.config.getfloat("hyperparameters", "delta")
@@ -273,7 +260,7 @@ def _sgd_step_vsp(vsp_pairs: dict, enriched_vectors: dict, config: SettingConfig
     return gradient_updates, update_count
 
 
-def sgd_step(vectors: dict, synonym_pairs: list, antonym_pairs: list, vsp_pairs: dict, config: SettingConfig) -> dict:
+def sgd_step(vectors: dict, synonym_pairs: list, antonym_pairs: list, vsp_pairs: dict, config: SettingConfig):
     enriched_vectors = deepcopy(vectors)
     gradient_updates = dict()
     update_count = dict()
@@ -327,6 +314,7 @@ def counterfit(config: SettingConfig) -> dict:
         current_iteration += 1
         print(f"\tRunning SGD Step {current_iteration}")
         word_vectors = sgd_step(word_vectors, synonyms, antonyms, vsp_pairs, config)
+        print(f"\tFinished SGD Step {current_iteration}")
     return word_vectors
 
 
@@ -351,9 +339,6 @@ def run_experiment(config_path: str, language_model_name: str) -> None:
 
     # Perform comparative analysis with original vectors
     config.comparator.compare()
-
-    # For the sake of our RAM
-    to.clear_memory()
 
 
 def init_argument_parser() -> argparse.ArgumentParser:
