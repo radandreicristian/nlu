@@ -1,41 +1,88 @@
 import io
 
 
-def analyze_antonyms(dump_path: str) -> None:
-    # List of dicts. Index in list = scenario. Dict key :error, dict value: nr of encounters in scenario
-    antonym_errors = [{"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      {"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      {"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      {"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      {"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      {"aprinde/stinge_lumina": 0,
-                       "creste/scade_lumina": 0,
-                       "creste/scade_temp": 0,
-                       "porneste/opreste_tv": 0},
-                      ]
-    light_intents = ['aprindeLumina', 'stingeLumina']
+def generate_antonym_confusions_report(dump_path: str) -> None:
+    """
+    Prints error analaytics for antonyms from an intent errors dump generated from the RASA pipeline.
+    :param dump_path: Path to the intent dumps.
+    :return: None, just prints the errors to stdout.
+    """
+    # List of dicts. Index in list = scenario. Dict key :error (Pred/Act), dict value: nr of encounters in scenario
+    antonym_errors = [
+        # Scenario 0
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
 
-    light_intensity_intents = ['cresteIntensitateLumina', 'scadeIntensitateLumina']
+        # Scenario 1
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
 
-    temperature_intents = ['cresteTemperatura', 'scadeTemperatura']
+        # Scenario 2
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
 
-    tv_intents = ['opresteTV', 'pornesteTV']
+        # Scenario 3.1
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
 
+        # Scenario 3.2
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
+
+        # Scenario 3.3
+        {"aprindeLumina/stingeLumina": 0,
+         "stingeLumina/aprindeLumina": 0,
+         "cresteIntensitateLumina/scadeIntensitateLumina": 0,
+         "scadeIntensitateLumina/cresteIntensitateLumina": 0,
+         "cresteTemperatura/scadeTemperatura": 0,
+         "scadeTemperatura/cresteTemperatura": 0,
+         "pornesteTV/opresteTV": 0,
+         "opresteTV/pornesteTV": 0,
+         "cresteIntensitateMuzica/scadeIntensitateMuzica": 0,
+         "scadeIntensitateMuzica/cresteIntensitateMuzica": 0},
+    ]
+
+    keys = antonym_errors[0].keys()
     # Parse a human readable format rasa result. Don't shoot me for not using the json
     with io.open(file=dump_path, mode="r", encoding="utf-8") as input_file:
         current_scenario_index = 0
@@ -54,32 +101,20 @@ def analyze_antonyms(dump_path: str) -> None:
                 split_line = line.strip("\t").strip().split(" ")
                 first_intent = split_line[1].replace(".", "")
                 second_intet = split_line[3].replace(".", "")
-                if first_intent in light_intents and second_intet in light_intents:
-                    antonym_errors[current_scenario_index]['aprinde/stinge_lumina'] += 1
-                if first_intent in light_intensity_intents and second_intet in light_intensity_intents:
-                    antonym_errors[current_scenario_index]['creste/scade_lumina'] += 1
-                if first_intent in temperature_intents and second_intet in temperature_intents:
-                    antonym_errors[current_scenario_index]['creste/scade_temp'] += 1
-                if first_intent in tv_intents and second_intet in tv_intents:
-                    antonym_errors[current_scenario_index]['porneste/opreste_tv'] += 1
-
+                error = f"{first_intent}/{second_intet}"
+                if error in keys:
+                    antonym_errors[current_scenario_index][error] += 1
         input_file.close()
     for scenario in antonym_errors:
         for k, v in scenario.items():
             scenario[k] = int(v / 5)
 
-    for _scenario in antonym_errors:
+    for index, _scenario in enumerate(antonym_errors):
+        print(f"Scenario {index}")
         for k, v in _scenario.items():
-            print(f"{k} {v}\n")
-
-
-def analyze_any(dump_path: str) -> None:
-    # TODO
-    errors = []
-    with io.open(file=dump_path, mode="r", encoding="utf-8") as input_file:
-        input_file.close()
+            print(f"\t{k} {v}")
 
 
 if __name__ == '__main__':
-    analyze_antonyms(
-        "C:\\Uni\\Thesis\\radandreicristian\\nlu\\rad-antonyms\\results\\analysis_archives\\best_base_full_pipeline_v2_ht4\\results\\merged_reports\\intent_errors_merged.txt")
+    generate_antonym_confusions_report(
+        "C:\\Uni\\Thesis\\radandreicristian\\nlu\\rad-antonyms\\results\\analysis_archives\\same_splits\\augmentedmaxdist_samesplits\\merged_reports\\intent_errors_merged.txt")

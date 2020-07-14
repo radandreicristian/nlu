@@ -3,6 +3,7 @@ import json
 import os
 import re
 import string
+import time
 from datetime import datetime
 from math import sqrt
 from operator import itemgetter
@@ -48,6 +49,8 @@ def copy_path(src_path: str, dst_path: str, append=True) -> None:
     :param append: If false, the file is overwritten, else it is appended to.
     :return:
     """
+    if not os.path.exists(src_path):
+        return
     with io.open(src_path, "r", encoding="utf-8") as src:
         with io.open(dst_path, "a" if append else "w", encoding="utf-8") as dst:
             for line in src:
@@ -102,6 +105,7 @@ def extract_sentences_from_file(path: str) -> list:
     :return: The list of all sentences
     """
     sentences = list()
+    print("Scenario path: ", path)
     with io.open(file=path, mode="r", encoding="utf-8") as input_file:
         content = json.load(input_file)
 
@@ -151,6 +155,10 @@ def get_time() -> str:
     :return:
     """
     return datetime.now().strftime('%H:%M')
+
+
+def get_timestamp() -> str:
+    return str(time.time()).split('.')[0]
 
 
 def load_constraints(path: str) -> list:
@@ -207,7 +215,7 @@ def load_vectors(path: str, vocabulary: set) -> (Optional[str], dict):
     :return: A dictionary where keys are the words that appear in the vocabulary and the values are their embeddings,
     as numpy arrays.
     """
-    print(f"Started loading vectors from {path} @ {datetime.now()}")
+    print(f"Started loading vectors from {path}.")
     print(f"No. of words in vocabulary: {len(vocabulary)}")
     words = dict()
     try:

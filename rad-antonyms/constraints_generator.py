@@ -1,8 +1,8 @@
 import configparser
 import errno
 import os
+import pathlib
 import sys
-from datetime import datetime
 
 import rowordnet as rwn
 
@@ -12,11 +12,13 @@ from util.tools import unique, process_pair, get_cross_synset_pairs, get_synset_
 
 class SettingConfig:
 
-    def __init__(self, config_path):
+    def __init__(self, config_path, output_path):
 
-        print("Initializing configuration for relations generator...")
+        print("Initializing configuration for relations generator.")
         # Read the config file
         self.config = configparser.RawConfigParser()
+
+        config_path = os.path.join(pathlib.Path(__file__).parent.absolute(), config_path)
         try:
             self.config.read(config_path)
         except OSError:
@@ -31,20 +33,25 @@ class SettingConfig:
                    "adverb": rwn.Synset.Pos.ADVERB,
                    "adjective": rwn.Synset.Pos.ADJECTIVE}
 
+        project_root = pathlib.Path(__file__).parent.absolute()
+
         # Keep in the map of PoS : Rwn.Pos only the specified parts of speech
         self.pos = mapping
 
         # Load the root of the folders containing constraints
-        self.constraints_root_path = self.config.get("paths", "CONSTRAINTS_ROOT_PATH")
+        if output_path:
+            self.constraints_root_path = output_path
+        else:
+            self.constraints_root_path = self.config.get("paths", "CONSTRAINTS_ROOT_PATH")
 
-        vocab_path = self.config.get("paths", "VOCAB_PATH")
+        vocab_path = os.path.join(project_root, self.config.get("paths", "VOCAB_PATH"))
 
         self.vocabulary = list()
         with open(file=vocab_path, mode="r", encoding="utf-8") as vocab_file:
             for line in vocab_file:
                 self.vocabulary.append(line.strip())
         self.vocabulary = set(unique(self.vocabulary))
-        print(f"Loaded {len(self.vocabulary)} words from {vocab_path}")
+        # print(f"Loaded {len(self.vocabulary)} words from {vocab_path}")
         print(
             f"Finished initializing config for relations generator. Will output results to {self.constraints_root_path}")
 
@@ -84,16 +91,17 @@ def write_pairs(pairs: list, root_path: str, pos: str, constraint_type: str) -> 
     whatever fits.
     :return: None.
     """
-    print(f"Writing {pos} pairs to file")
     dir_path = os.path.join(root_path, pos)
 
     try:
-        os.mkdir(dir_path)
+        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
 
     constraints_path = os.path.join(dir_path, constraint_type + ".txt")
+
+    print(f"Writing {constraint_type} pairs of {pos}s. to {constraints_path}")
 
     save_pairs_to_file(pairs, constraints_path)
 
@@ -105,7 +113,7 @@ def generate_antonym_pairs(config: SettingConfig) -> dict:
     :return: A dictionary where keys are strings representing parts of speech and values are lists of pairs
     corresponding to synonyms / antonyms from that category.
     """
-    print(f"Generating initial antonym pairs from RoWordNet @ {datetime.now()}")
+    print(f"Generating antonym pairs.")
     wn = rwn.RoWordNet()
 
     # Create the output dictionary that will be of type dict(str : set(pair(str, str)) where the key is
@@ -146,7 +154,6 @@ def generate_antonym_pairs(config: SettingConfig) -> dict:
                 pairs[key] = unique(pos_pairs)
 
     # Return the whole dictionary
-    print(f"Successfully generated antonym paris @ {datetime.now()}")
     return pairs
 
 
@@ -157,6 +164,8 @@ def generate_synonym_pairs(config: SettingConfig) -> dict:
     :return: A dictionary where keys are strings representing parts of speech and values are lists of pairs
     corresponding to synonyms / antonyms from that category.
     """
+    print(f"Generating synonym pairs.")
+
     wn = rwn.RoWordNet()
 
     # Create the output dictionary that will be of type dict(str : set(pair(str, str)) where the key is
@@ -200,6 +209,7 @@ def antonyms_pipeline(config: SettingConfig) -> None:
     for pos in config.pos.keys():
         processed_synonym_pairs = postprocess_pairs(raw_antonym_pairs[pos], config)
         write_pairs(processed_synonym_pairs, config.constraints_root_path, pos, "antonyms")
+    print(f"Finished generating antonym paris.")
 
 
 def synonyms_pipeline(config: SettingConfig) -> None:
@@ -212,18 +222,22 @@ def synonyms_pipeline(config: SettingConfig) -> None:
     for pos in config.pos.keys():
         processed_synonym_pairs = postprocess_pairs(raw_synonym_pairs[pos], config)
         write_pairs(processed_synonym_pairs, config.constraints_root_path, pos, "synonyms")
+    print(f"Finished generating synonym paris.")
 
 
-def main():
+def extract_linguistic_constraints(config_path_param=None, output_path=None):
     try:
-        config_filepath = sys.argv[1]
+        config_path = sys.argv[1]
     except IndexError:
-        print("\nUsing the default config file: parameteres.cfg")
-        config_filepath = "parameters.cfg"
-    config = SettingConfig(config_filepath)
+        print("\nNo configuration path provided. Using the default config file.")
+        config_path = "parameters.cfg"
+    if config_path_param:
+        config = SettingConfig(config_path_param, output_path)
+    else:
+        config = SettingConfig(config_path, output_path)
     synonyms_pipeline(config)
     antonyms_pipeline(config)
 
 
 if __name__ == '__main__':
-    main()
+    extract_linguistic_constraints()

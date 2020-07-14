@@ -1,6 +1,7 @@
 import argparse
 import configparser
 import os.path
+import pathlib
 from copy import deepcopy
 from datetime import datetime
 
@@ -17,6 +18,8 @@ class SettingConfig:
 
         # Read the config file
         self.config = configparser.RawConfigParser()
+        project_root_path = pathlib.Path(__file__).parent.absolute()
+        config_path = os.path.join(project_root_path, config_path)
         try:
             self.config.read(config_path)
         except OSError:
@@ -24,19 +27,19 @@ class SettingConfig:
             return
 
         # Read the word vectors path from the config
-        self.input_vectors_path = self.config.get("paths", "VEC_PATH")
+        self.input_vectors_path = os.path.join(project_root_path, self.config.get("paths", "VEC_PATH"))
 
         # Read the vocabulary mode (all words or just dataset words) from the config
         self.vocab_mode = self.config.get("settings", "VOCABULARY")
         if self.vocab_mode == 'all':
             self.diacritics = 'True'
-            vocab_path = self.config.get("paths", "VOCAB_PATH")
+            vocab_path = os.path.join(project_root_path, self.config.get("paths", "VOCAB_PATH"))
         elif self.vocab_mode == 'small':
             self.diacritics = self.config.get("settings", "DIACRITICS")
             if self.diacritics == 'True':
-                vocab_path = self.config.get("paths", "VOCAB_PATH_DATASET_DIAC")
+                vocab_path = os.path.join(project_root_path, self.config.get("paths", "VOCAB_PATH_DATASET_DIAC"))
             else:
-                vocab_path = self.config.get("paths", "VOCAB_PATH_DATASET_NODIAC")
+                vocab_path = os.path.join(project_root_path, self.config.get("paths", "VOCAB_PATH_DATASET_NODIAC"))
         else:
             print('Wrong value for parameter VOCABULARY in config. Exiting')
             return
@@ -55,13 +58,13 @@ class SettingConfig:
         print("Loading constraints...")
         # Append antonyms and synonyms of each selected PoS from their respective folder
         for part_of_speech in self.parts_of_speech:
-            antonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "antonyms.txt"))
-            synonym_paths.append(os.path.join(constraints_root_path, part_of_speech, "synonyms.txt"))
+            antonym_paths.append(os.path.join(project_root_path, constraints_root_path, part_of_speech, "antonyms.txt"))
+            synonym_paths.append(os.path.join(project_root_path, constraints_root_path, part_of_speech, "synonyms.txt"))
 
         self.synonyms = to.load_multiple_constraints(synonym_paths)
         self.antonyms = to.load_multiple_constraints(antonym_paths)
 
-        vsp_path = self.config.get("paths", "VSP_PAIRS_PATH")
+        vsp_path = os.path.join(project_root_path, self.config.get("paths", "VSP_PAIRS_PATH"))
 
         self.vsp_pairs = to.load_vsp_pairs(vsp_path)
 
@@ -104,13 +107,15 @@ class SettingConfig:
 
         print("Loaded word vectors ")
         if language_model_name:
-            self.output_vectors_path = f"{self.config.get('paths', 'VEC_ROOT_PATH')}/{language_model_name}.vec"
+            self.output_vectors_path = os.path.join(project_root_path,
+                                                    f"{self.config.get('paths', 'VEC_ROOT_PATH')}/{language_model_name}.vec")
         else:
-            self.output_vectors_path = self.config.get("paths", "CF_VEC_PATH").split(".")[
-                                           0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec"
+            self.output_vectors_path = os.path.join(project_root_path,
+                                                    self.config.get("paths", "CF_VEC_PATH").split(".")[
+                                                        0] + f"_{str(datetime.timestamp(datetime.now())).split('.')[0]}.vec")
 
         # The vocabulary contains the keys of vectors successfully loaded by the initial vocabulary: Words in the
-        # initial vocabulary with no corresponding vector are skipped
+        # initial vocabulary with no corresponding vector are skipped3
         self.vocabulary = to.unique(self.vectors.keys())
 
         self.dimensions = f"{len(self.vocabulary)} {dimensions.split(' ')[1]}"
@@ -119,14 +124,14 @@ class SettingConfig:
         self.mode = mode
 
         # Read the hyperparameters of our run
-        self.hyper_k1 = self.config.getfloat("hyperparameters", "hyper_k1")
-        self.hyper_k2 = self.config.getfloat("hyperparameters", "hyper_k2")
-        self.hyper_k3 = self.config.getfloat("hyperparameters", "hyper_k3")
-        self.sgd_iters = self.config.getint("hyperparameters", "sgd_iters")
+        self.hyper_k1 = self.config.getfloat("hyperparameters", "K1")
+        self.hyper_k2 = self.config.getfloat("hyperparameters", "K2")
+        self.hyper_k3 = self.config.getfloat("hyperparameters", "K3")
+        self.gradient_epochs = self.config.getint("hyperparameters", "GRADIENT_EPOCHS")
 
-        self.delta = self.config.getfloat("hyperparameters", "delta")
-        self.gamma = self.config.getfloat("hyperparameters", "gamma")
-        self.rho = self.config.getfloat("hyperparameters", "rho")
+        self.delta = self.config.getfloat("hyperparameters", "DELTA")
+        self.gamma = self.config.getfloat("hyperparameters", "GAMMA")
+        self.rho = self.config.getfloat("hyperparameters", "RHO")
         print(
             f"Initialized counterfitting settings. Vocab path: {vocab_path}, PoS paths: {self.parts_of_speech},"
             f" Mode: {self.mode}, diacritics: {self.diacritics}."
@@ -141,7 +146,7 @@ class SettingConfig:
 
     def hyperparams_tostring(self) -> str:
         return (f"k1={self.hyper_k1}, k2={self.hyper_k2}, k3={self.hyper_k3}"
-                f" delta={self.delta}, gamma={self.gamma}, rho={self.rho}, sgd_iters={self.sgd_iters}")
+                f" delta={self.delta}, gamma={self.gamma}, rho={self.rho}, sgd_iters={self.gradient_epochs}")
 
 
 def _sgd_step_ant(antonym_pairs: list, enriched_vectors: dict, config: SettingConfig, gradient_updates: dict,
@@ -306,15 +311,15 @@ def counterfit(config: SettingConfig) -> dict:
         if antonym_pair in vsp_pairs:
             del vsp_pairs[antonym_pair]
 
-    print("Running the optimisation procedure for ", config.sgd_iters, " SGD steps...")
+    print("Running the optimisation procedure for ", config.gradient_epochs, " steps...")
 
-    sgd_steps = config.sgd_iters
+    gradient_epochs = config.gradient_epochs
 
-    while current_iteration < sgd_steps:
+    while current_iteration < gradient_epochs:
         current_iteration += 1
-        print(f"\tRunning SGD Step {current_iteration}")
+        print(f"\tRunning Gradient Descent Step {current_iteration}")
         word_vectors = sgd_step(word_vectors, synonyms, antonyms, vsp_pairs, config)
-        print(f"\tFinished SGD Step {current_iteration}")
+        print_loss(antonyms, synonyms, word_vectors, config)
     return word_vectors
 
 
@@ -325,7 +330,7 @@ def run_experiment(config_path: str, language_model_name: str) -> None:
     :param language_model_name: Unique idenfitier for the language
     :return:
     """
-    print(f"Started counterfitting run at {to.get_time()}")
+    print(f"Started embedding enhancement procedure at {to.get_time()}.")
     config = SettingConfig(config_path, language_model_name)
     if not config.vectors:
         print("Unable to load vectors. Aborting.")
@@ -339,6 +344,27 @@ def run_experiment(config_path: str, language_model_name: str) -> None:
 
     # Perform comparative analysis with original vectors
     config.comparator.compare()
+
+
+def print_loss(antonym_pairs: list, synonym_pairs: list, enhanced_vectors: dict, config: SettingConfig):
+    # synonyms_sum = k1 * sum([to.distance(enhanced_vectors[w1], enhanced_vectors[w2]) for (w1, w2) in synonym_pairs])
+    # antonyms_sum = k2 * sum([to.distance(enhanced_vectors[w1], enhanced_vectors[w2]) for (w1, w2) in antonym_pairs])
+
+    syn_sum = 0
+    ant_sum = 0
+    for (w1, w2) in synonym_pairs:
+        try:
+            ew1, ew2 = enhanced_vectors[w1], enhanced_vectors[w2]
+            syn_sum += config.hyper_k2 * max(0, to.distance(ew1, ew2) - config.gamma)
+        except KeyError:
+            pass
+    for (w1, w2) in antonym_pairs:
+        try:
+            ew1, ew2 = enhanced_vectors[w1], enhanced_vectors[w2]
+            ant_sum += config.hyper_k2 * max(0, config.delta - to.distance(ew1, ew2))
+        except KeyError:
+            pass
+    print(f'Loss: {ant_sum + syn_sum}')
 
 
 def init_argument_parser() -> argparse.ArgumentParser:
@@ -355,7 +381,7 @@ def init_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main():
+def enhance():
     arg_parser = init_argument_parser()
     arguments = arg_parser.parse_args()
 
@@ -368,4 +394,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    enhance()

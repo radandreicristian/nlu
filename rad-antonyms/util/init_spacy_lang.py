@@ -278,7 +278,7 @@ def main():
         print("Name of the spaCy language model (-n) not supplied.")
 
     if not (lang_code and model_out and model and vectors and lang_name):
-        print("Usage: python init_spacy_lang.py -n LANG -m MODELS_LOC -v VECTORS_LOC -o OUTPUT_LOC -n LANG_MODEL_NAME")
+        print("Usage: python init_spacy_lang.py -l LANG -m MODELS_LOC -v VECTORS_LOC -o OUTPUT_LOC -n LANG_MODEL_NAME")
 
     overwrite = arguments.overwrite or False
     # Extra check: Make sure we are inside a virtual environment (for safety measures, but can be removed)

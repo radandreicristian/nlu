@@ -92,7 +92,8 @@ def generate_conjugated_pairs(lemma: str, wordnet: RoWordNet, conjugator: mlconj
                 # Well, no big deal if we are unable to conjugate the pairs. Probably the correct place to "solve"
                 # the error of intruders by simply passing to the next conjugation step and filtering only
                 # valid elements in the list.
-                print(f"Value Error when conjugating {pair}")
+                # print(f"Value Error when conjugating {pair}")
+                # TODO bring that print back
                 pass
 
     return conjugated_pairs
@@ -111,14 +112,16 @@ def conjugate(lemma: str, conjugator: mlconjug.Conjugator, time: tuple) -> Optio
         try:
             conjugated_form = conjugator.conjugate(lemma).conjug_info[time[0]][time[1]][time[2]]
         except KeyError:
-            print(f"Unable to conjugate {lemma} at {time}.")
+            # print(f"Unable to conjugate {lemma} at {time}.")
+            # TODO bring that print back
             return None
     # Time is a tuple of time, mode (impersonal verb) -> conjug_info takes 2 indices (third is default to '')
     elif len(time) == 2:
         try:
             conjugated_form = conjugator.conjugate(lemma).conjug_info[time[0]][time[1]]['']
         except KeyError:
-            print(f"Unable to conjugate {lemma} at {time}.")
+            # print(f"Unable to conjugate {lemma} at {time}.")
+            # TODO bring that print back
             return None
     else:
         raise IndexError("Insufficient/Incorrect number of time parameters. Expected either 2 or 3")
@@ -218,8 +221,9 @@ def extract_verb_lemmas(base_langauge_model: str, sentences: list) -> tuple:
                                 verb_times.append((time, mood, person))
 
                     except ValueError:
-                        print(f"Unable to conjugate, possibly mistagged verb {token.text}")
-
+                        # print(f"Unable to conjugate, possibly mistagged verb {token.text}")
+                        # TODO Keep this print
+                        pass
     verb_lemmas = unique(verb_lemmas)
     verb_times = unique(verb_times)
     print("Verbs extracted", verb_lemmas)

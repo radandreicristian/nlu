@@ -2,9 +2,21 @@ import configparser
 import os
 import pathlib
 
+import numpy as np
 import pandas as pd
 
 from util import tools
+
+
+def dict_compare(d1, d2):
+    d1_keys = set(d1.keys())
+    d2_keys = set(d2.keys())
+    shared_keys = d1_keys.intersection(d2_keys)
+    added = d1_keys - d2_keys
+    removed = d2_keys - d1_keys
+    modified = {o: (d1[o], d2[o]) for o in shared_keys if not np.array_equal(d1[o], d2[o])}
+    same = set(o for o in shared_keys if np.array_equal(d1[o], d2[o]))
+    return added, removed, modified, same
 
 
 class Comparator:
@@ -14,6 +26,14 @@ class Comparator:
 
     def __init__(self, config_path: str, original_vectors: dict, counterfit_vectors: dict, **kwargs):
 
+        added, removed, modified, same = dict_compare(original_vectors, counterfit_vectors)
+        print(f"""
+            original: {len(original_vectors)}
+            counterfit: {len(counterfit_vectors)}
+            modified: {len(modified)}
+        """)
+        project_root_path = pathlib.Path(__file__).parent.parent.absolute()
+        config_path = os.path.join(project_root_path, config_path)
         self.config = configparser.RawConfigParser()
         try:
             self.config.read(config_path)
@@ -46,7 +66,7 @@ class Comparator:
 
         # Set epsilon, the minimum distance difference between similarities of an origina/counterfit pair
         # to be considered valid
-        self.epsilon = self.config.get("hyperparameters", "epsilon")
+        self.epsilon = self.config.get("hyperparameters", "EPSILON")
         self.syn_output_path = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "lang",
                                             "counterfitting_reports",
                                             str("".join(self.counterfit_vectors_path).split("/")[-1].rsplit(".", 1)[
@@ -71,6 +91,12 @@ class Comparator:
             print("Loaded counterfit vectors from parameter")
             cf_vecs = self.counterfit_vectors
 
+        added, removed, modified, same = dict_compare(og_vecs, cf_vecs)
+        print(f"""
+                    original: {len(og_vecs)}
+                    counterfit: {len(cf_vecs)}
+                    modified: {len(modified)}
+                """)
         syn_cos_similarities_first_term = list()
         syn_cos_similarities_second_term = list()
         syn_original_cos_similarities = list()
